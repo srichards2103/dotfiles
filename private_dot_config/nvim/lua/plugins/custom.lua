@@ -1,7 +1,24 @@
 return {
+  -- markdown preview in chrome
+  {
+    "iamcco/markdown-preview.nvim",
+    cmd = { "MarkdownPreviewToggle", "MarkdownPreview", "MarkdownPreviewStop" },
+    ft = { "markdown" },
+    build = function()
+      vim.fn["mkdp#util#install"]()
+    end,
+    keys = {
+      { "<leader>mp", "<cmd>MarkdownPreview<cr>", desc = "Markdown Preview" },
+    },
+    init = function()
+      vim.g.mkdp_browser = "Google Chrome"
+      vim.g.mkdp_filetypes = { "markdown" }
+    end,
+  },
+
   -- colorscheme (matches lazyvim.org/plugins/colorscheme pattern)
-  { "navarasu/onedark.nvim", opts = { style = "dark" } },
-  { "LazyVim/LazyVim", opts = { colorscheme = "onedark" } },
+  { "rebelot/kanagawa.nvim" },
+  { "LazyVim/LazyVim", opts = { colorscheme = "kanagawa" } },
 
   -- diffview
   {
