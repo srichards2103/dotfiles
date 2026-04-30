@@ -18,7 +18,7 @@ return {
 
   -- colorscheme (matches lazyvim.org/plugins/colorscheme pattern)
   { "rebelot/kanagawa.nvim" },
-  { "LazyVim/LazyVim", opts = { colorscheme = "kanagawa" } },
+  { "LazyVim/LazyVim", opts = { colorscheme = "kanagawa-wave" } },
 
   -- diffview
   {
@@ -26,7 +26,11 @@ return {
     keys = {
       { "<leader>gd", "<cmd>DiffviewOpen<cr>", desc = "Diff view" },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File history" },
+      { "<leader>gm", "<cmd>DiffviewOpen origin/develop...HEAD<cr>", desc = "MR diff vs develop" },
     },
+    init = function()
+      require("diffview_reviewed").setup()
+    end,
     opts = {
       enhanced_diff_hl = true,
       use_icons = true,
@@ -66,6 +70,12 @@ return {
           "migrations/",
         },
       },
+      pickers = {
+        find_files = {
+          hidden = true,
+          no_ignore = true,
+        },
+      },
     },
   },
 
@@ -75,6 +85,20 @@ return {
     opts = {
       terminal = {
         split_side = "bottom",
+      },
+    },
+  },
+
+  -- snacks picker: show hidden files in <leader>ff
+  {
+    "folke/snacks.nvim",
+    opts = {
+      picker = {
+        sources = {
+          files = {
+            hidden = true,
+          },
+        },
       },
     },
   },
