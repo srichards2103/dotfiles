@@ -27,6 +27,7 @@ return {
       { "<leader>gd", "<cmd>DiffviewOpen<cr>", desc = "Diff view" },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File history" },
       { "<leader>gm", "<cmd>DiffviewOpen origin/develop...HEAD<cr>", desc = "MR diff vs develop" },
+      { "<leader>gmr", function() require("diffview_reviewed").reopen_mr_diff() end, desc = "Reopen MR diff" },
     },
     init = function()
       require("diffview_reviewed").setup()
@@ -89,6 +90,68 @@ return {
     },
   },
 
+  -- opencode: native Neovim integration
+  {
+    "nickjvandyke/opencode.nvim",
+    version = "*",
+    dependencies = {
+      {
+        "folke/snacks.nvim",
+        optional = true,
+        opts = {
+          input = {},
+          picker = {
+            actions = {
+              opencode_send = function(...) return require("opencode").snacks_picker_send(...) end,
+            },
+            win = {
+              input = {
+                keys = {
+                  ["<a-a>"] = { "opencode_send", mode = { "n", "i" } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    config = function()
+      vim.g.opencode_opts = {}
+      vim.o.autoread = true
+
+      vim.keymap.set({ "n", "t" }, "<leader>oo", function()
+        require("opencode").toggle()
+      end, { desc = "Toggle opencode" })
+      vim.keymap.set({ "n", "x" }, "<leader>oa", function()
+        require("opencode").ask("@this: ", { submit = true })
+      end, { desc = "Ask opencode" })
+      vim.keymap.set({ "n", "x" }, "<leader>os", function()
+        require("opencode").select()
+      end, { desc = "Select opencode action" })
+      vim.keymap.set("n", "<leader>on", function()
+        require("opencode").command("session.new")
+      end, { desc = "New opencode session" })
+      vim.keymap.set("n", "<leader>ol", function()
+        require("opencode").command("session.select")
+      end, { desc = "Select opencode session" })
+      vim.keymap.set("n", "<leader>oq", function()
+        require("opencode").command("session.interrupt")
+      end, { desc = "Interrupt opencode" })
+      vim.keymap.set("n", "<S-C-u>", function()
+        require("opencode").command("session.half.page.up")
+      end, { desc = "Scroll opencode up" })
+      vim.keymap.set("n", "<S-C-d>", function()
+        require("opencode").command("session.half.page.down")
+      end, { desc = "Scroll opencode down" })
+      vim.keymap.set({ "n", "x" }, "go", function()
+        return require("opencode").operator("@this ")
+      end, { desc = "Add range to opencode", expr = true })
+      vim.keymap.set("n", "goo", function()
+        return require("opencode").operator("@this ") .. "_"
+      end, { desc = "Add line to opencode", expr = true })
+    end,
+  },
+
   -- snacks picker: show hidden files in <leader>ff
   {
     "folke/snacks.nvim",
@@ -124,6 +187,15 @@ return {
       { "<C-j>", "<cmd>TmuxNavigateDown<cr>" },
       { "<C-k>", "<cmd>TmuxNavigateUp<cr>" },
       { "<C-l>", "<cmd>TmuxNavigateRight<cr>" },
+    },
+  },
+
+  -- vim motion practice game
+  {
+    "ThePrimeagen/vim-be-good",
+    cmd = "VimBeGood",
+    keys = {
+      { "<leader>vg", "<cmd>VimBeGood<cr>", desc = "Vim Be Good" },
     },
   },
 }

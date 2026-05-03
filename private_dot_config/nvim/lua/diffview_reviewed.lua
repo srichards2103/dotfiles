@@ -61,9 +61,51 @@ local function has_marked_child(state, dir_path)
   return false
 end
 
-local function set_tick(buf, lineno)
+local function file_stats(file)
+  if not file or not file.stats then return nil end
+  if not file.stats.additions and not file.stats.deletions then return nil end
+
+  return {
+    additions = file.stats.additions or 0,
+    deletions = file.stats.deletions or 0,
+  }
+end
+
+local function add_stats(total, stats)
+  if not stats then return total end
+  total.additions = total.additions + stats.additions
+  total.deletions = total.deletions + stats.deletions
+  return total
+end
+
+local function dir_stats(root, dir_path)
+  local total = { additions = 0, deletions = 0 }
+  local prefix = dir_path .. "/"
+
+  root:deep_some(function(comp)
+    if comp.name == "file" and comp.context and comp.context.path:sub(1, #prefix) == prefix then
+      add_stats(total, file_stats(comp.context))
+    end
+  end)
+
+  if total.additions == 0 and total.deletions == 0 then return nil end
+  return total
+end
+
+local function set_row_summary(buf, lineno, stats, is_viewed)
+  if not stats and not is_viewed then return end
+
+  local text = {}
+  if stats then
+    text[#text + 1] = { "+" .. stats.additions, "DiffviewFilePanelInsertions" }
+    text[#text + 1] = { " -" .. stats.deletions, "DiffviewFilePanelDeletions" }
+  end
+  if is_viewed then
+    text[#text + 1] = { " ✓", "DiffAdd" }
+  end
+
   vim.api.nvim_buf_set_extmark(buf, ns, lineno, 0, {
-    virt_text = { { "✓", "DiffAdd" } },
+    virt_text = text,
     virt_text_pos = "right_align",
     priority = 200,
   })
@@ -73,12 +115,12 @@ local function render_component_marks(buf, root, state)
   if not root or not root.deep_some then return false end
 
   root:deep_some(function(comp)
-    if comp.name == "file" and comp.context and state[comp.context.path] and comp.lstart >= 0 then
-      set_tick(buf, comp.lstart)
+    if comp.name == "file" and comp.context and comp.lstart >= 0 then
+      set_row_summary(buf, comp.lstart, file_stats(comp.context), state[comp.context.path])
     elseif comp.name == "dir_name" and comp.parent and comp.parent.context then
       local dir = comp.parent.context
-      if dir.collapsed and has_marked_child(state, dir.path) and comp.lstart >= 0 then
-        set_tick(buf, comp.lstart)
+      if dir.collapsed and comp.lstart >= 0 then
+        set_row_summary(buf, comp.lstart, dir_stats(root, dir.path), has_marked_child(state, dir.path))
       end
     end
   end)
@@ -113,11 +155,12 @@ function M.render()
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
 
   local state = load_state()[branch_key()] or {}
-  if vim.tbl_isempty(state) then return end
 
   if view.panel.components and render_component_marks(buf, view.panel.components.comp, state) then
     return
   end
+
+  if vim.tbl_isempty(state) then return end
 
   local marked_basenames = {}
   for path, _ in pairs(state) do
@@ -176,6 +219,13 @@ function M.list()
   end
   table.sort(paths)
   vim.notify("Viewed (" .. branch_key() .. "):\n  " .. table.concat(paths, "\n  "))
+end
+
+function M.reopen_mr_diff()
+  vim.cmd("DiffviewClose")
+  vim.schedule(function()
+    vim.cmd("DiffviewOpen origin/develop...HEAD")
+  end)
 end
 
 function M.setup()

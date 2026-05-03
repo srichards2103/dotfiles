@@ -6,3 +6,4 @@ vim.diagnostic.config({ virtual_text = false, signs = false, underline = false }
 vim.g.root_spec = { "cwd" } -- don't auto-change cwd based on open file
 vim.opt.timeoutlen = 150
 vim.opt.clipboard = "unnamedplus" -- yank/paste uses system clipboard
+vim.opt.guicursor:append("a:blinkwait700-blinkon400-blinkoff250") -- blink cursor in all modes

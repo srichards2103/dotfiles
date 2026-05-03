@@ -129,15 +129,33 @@ oc() {
     open -a "Google Chrome" "http://wskips.encore.localhost"
   fi
 }
+omp() {
+  local root="$(git rev-parse --show-toplevel)"
+  local port=$(grep MAILPIT_UI_PORT "$root/.worktree.env" 2>/dev/null | cut -d= -f2)
+  if [[ -n "$port" ]]; then
+    open -a "Google Chrome" "http://localhost:$port"
+  else
+    echo "omp: MAILPIT_UI_PORT not set in $root/.worktree.env" >&2
+    return 1
+  fi
+}
 drst() {
   local root="$(git rev-parse --show-toplevel)"
   sed -i '' "s/^BOOTSTRAP_WSKIPS=.*/BOOTSTRAP_WSKIPS=True/" "$root/dev.env"
+  sed -i '' "s/^RUN_MIGRATIONS=.*/RUN_MIGRATIONS=True/" "$root/dev.env"
   "$root/deploy/db_deploy_and_restore.sh"
 }
 drstn() {
   local root="$(git rev-parse --show-toplevel)"
   sed -i '' "s/^BOOTSTRAP_WSKIPS=.*/BOOTSTRAP_WSKIPS=False/" "$root/dev.env"
   "$root/deploy/db_deploy_and_restore.sh"
+}
+
+blogz() {
+  local root="$(git rev-parse --show-toplevel)"
+  local name=$(grep COMPOSE_PROJECT_NAME "$root/.worktree.env" 2>/dev/null | cut -d= -f2)
+  local container="${name:-wasteos}-backend-1"
+  docker logs "$container" --tail "${1:-100}" -f
 }
 
 export PATH="$HOME/.pyenv/bin:$PATH"
@@ -160,3 +178,15 @@ export PATH="/Users/samrichards/.antigravity/antigravity/bin:$PATH"
 
 # opencode
 export PATH=/Users/samrichards/.opencode/bin:$PATH
+
+set -o vi
+
+# @ — Natural language to shell commands via Claude Code
+@() {
+  local request="$*"
+  local system_prompt=$(cat ~/.at_prompt)
+  printf "⏳ thinking... "
+  local cmd=$(claude -p --model sonnet "$system_prompt <request>$request<end>" | head -1)
+  printf "\r\033[K"
+  print -z "$cmd"
+}
