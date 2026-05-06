@@ -28,9 +28,16 @@ return {
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File history" },
       { "<leader>gm", "<cmd>DiffviewOpen origin/develop...HEAD<cr>", desc = "MR diff vs develop" },
       { "<leader>gmr", function() require("diffview_reviewed").reopen_mr_diff() end, desc = "Reopen MR diff" },
+      { "<leader>gc", function() require("gitlab_review").comment(false) end, mode = "n", desc = "Comment on MR diff" },
+      { "<leader>gc", function() require("gitlab_review").comment(false, true) end, mode = "x", desc = "Comment on MR diff" },
+      { "<leader>gC", function() require("gitlab_review").comment(true) end, mode = "n", desc = "Draft MR diff comment" },
+      { "<leader>gC", function() require("gitlab_review").comment(true, true) end, mode = "x", desc = "Draft MR diff comment" },
+      { "<leader>gP", function() require("gitlab_review").publish_drafts() end, desc = "Publish MR draft comments" },
+      { "<leader>gt", function() require("gitlab_review").toggle_threads() end, desc = "Toggle MR review threads" },
     },
     init = function()
       require("diffview_reviewed").setup()
+      require("gitlab_review").setup()
     end,
     opts = {
       enhanced_diff_hl = true,
@@ -54,6 +61,25 @@ return {
           position = "left",
           width = 35,
         },
+      },
+    },
+  },
+
+  -- terminal image rendering
+  {
+    "3rd/image.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    opts = {
+      backend = "kitty",
+      processor = "magick_cli",
+      window_overlap_clear_enabled = true,
+      editor_only_render_when_focused = true,
+      tmux_show_only_in_active_window = true,
+      integrations = {
+        markdown = { enabled = false },
+        neorg = { enabled = false },
+        html = { enabled = false },
+        css = { enabled = false },
       },
     },
   },
@@ -166,17 +192,35 @@ return {
     },
   },
 
-  -- show gitignored files in neo-tree
+  -- neo-tree: show gitignored files + agent <leader>ap/<leader>aP mappings
+  -- so you can hover a file and append @<path> to claude/codex input box
   {
     "nvim-neo-tree/neo-tree.nvim",
-    opts = {
-      filesystem = {
-        filtered_items = {
-          visible = true,
-          hide_gitignored = false,
-        },
-      },
-    },
+    opts = function(_, opts)
+      opts.filesystem = opts.filesystem or {}
+      opts.filesystem.filtered_items = vim.tbl_deep_extend(
+        "force",
+        opts.filesystem.filtered_items or {},
+        { visible = true, hide_gitignored = false }
+      )
+
+      opts.filesystem.window = opts.filesystem.window or {}
+      opts.filesystem.window.mappings = opts.filesystem.window.mappings or {}
+
+      local function send_to(agent)
+        return function(state)
+          local node = state.tree:get_node()
+          if node and node.type == "file" then
+            require("agent").send_path(agent, node.path)
+          else
+            vim.notify("agent: cursor is not on a file", vim.log.levels.WARN)
+          end
+        end
+      end
+
+      opts.filesystem.window.mappings["<leader>ap"] = send_to("claude")
+      opts.filesystem.window.mappings["<leader>aP"] = send_to("codex")
+    end,
   },
 
   -- seamless tmux/nvim pane navigation
@@ -187,15 +231,6 @@ return {
       { "<C-j>", "<cmd>TmuxNavigateDown<cr>" },
       { "<C-k>", "<cmd>TmuxNavigateUp<cr>" },
       { "<C-l>", "<cmd>TmuxNavigateRight<cr>" },
-    },
-  },
-
-  -- vim motion practice game
-  {
-    "ThePrimeagen/vim-be-good",
-    cmd = "VimBeGood",
-    keys = {
-      { "<leader>vg", "<cmd>VimBeGood<cr>", desc = "Vim Be Good" },
     },
   },
 }

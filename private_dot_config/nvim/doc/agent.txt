@@ -1,0 +1,161 @@
+*agent.txt*    Send Neovim text to a Claude Code or Codex tmux pane
+
+==============================================================================
+CONTENTS                                                       *agent-contents*
+
+  1. Introduction ......................... |agent-introduction|
+  2. Setup ................................ |agent-setup|
+  3. Commands ............................. |agent-commands|
+  4. Default keymaps ...................... |agent-keymaps|
+  5. Pane tagging ......................... |agent-tagging|
+  6. Troubleshooting ...................... |agent-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                            *agent-introduction*
+
+Sends text from Neovim into a Claude Code or Codex CLI session running in a
+sibling tmux pane in the same tmux window. The send pipeline is:
+
+    tmux load-buffer  →  paste-buffer -p  →  send-keys Enter
+
+`paste-buffer -p` wraps the payload in a bracketed-paste sequence; the
+trailing Enter is sent OUTSIDE that sequence so the agent submits the prompt.
+
+==============================================================================
+2. SETUP                                                          *agent-setup*
+
+>lua
+    require("agent").setup()
+<
+
+`setup()` registers the user commands, runs |agent-tagging| once on sibling
+panes, and rebuilds Vim help tags so `:help agent` works.
+
+==============================================================================
+3. COMMANDS                                                    *agent-commands*
+
+                                                                    *:AgentSend*
+:[range]AgentSend {agent}
+    Send the [range] (visual selection) to {agent} ("claude" or "codex"),
+    fenced as a code block with a `path:L1-L2` header. No prompt prefix.
+
+                                                              *:AgentSendPrompt*
+:[range]AgentSendPrompt {agent}
+    Open a small floating window above the selection. Type some context,
+    press <Esc> then <CR> to submit. The combined payload is:
+
+        <your prompt>
+        <blank line>
+        <path>:L1-L2
+        ```<lang>
+        <code>
+        ```
+
+    An empty prompt cancels the send.
+
+                                                              *:AgentSendBuffer*
+:AgentSendBuffer {agent}
+    Send the entire current buffer, fenced with the buffer's filetype.
+
+                                                                *:AgentSendPath*
+:AgentSendPath {agent} [{path}]
+    Append "@<path> " to {agent}'s input box (with trailing space, no Enter).
+    Does NOT submit — keep typing in the agent pane and submit yourself.
+    If [{path}] is given, that path is sent (relativized against cwd).
+    Otherwise the current buffer's path is used.
+
+    `@<path>` is the inline file-reference syntax in both Claude Code and
+    Codex; the agent will read the file's contents when you submit.
+
+                                                                     *:AgentTag*
+:AgentTag {agent}
+    Tag the previously-active tmux pane (`!`) as the named agent. Useful
+    when auto-detection fails on an unusual install. Run from the Neovim
+    pane immediately after switching back from the agent pane.
+
+                                                                  *:AgentRescan*
+:AgentRescan
+    Force-clear all `@agent` tags on sibling panes in the current window,
+    then re-run auto-detection. Use this when tags are stale or wrong.
+
+==============================================================================
+4. DEFAULT KEYMAPS                                              *agent-keymaps*
+
+The default keymaps are set in `lua/config/keymaps.lua` (not by `setup()`),
+so feel free to remove or rebind them.
+
+  Visual mode:
+    <leader>ac      :AgentSendPrompt claude    selection + prompt → Claude
+    <leader>ax      :AgentSendPrompt codex     selection + prompt → Codex
+
+  Normal mode:
+    <leader>ab      :AgentSendBuffer claude    whole buffer → Claude
+    <leader>aB      :AgentSendBuffer codex     whole buffer → Codex
+    <leader>ap      :AgentSendPath claude      @<file> → Claude (append)
+    <leader>aP      :AgentSendPath codex       @<file> → Codex (append)
+
+  Inside neo-tree (cursor on a file):
+    <leader>ap      Send @<file-under-cursor> → Claude
+    <leader>aP      Send @<file-under-cursor> → Codex
+
+==============================================================================
+5. PANE TAGGING                                                 *agent-tagging*
+
+Each agent pane is identified by tmux's per-pane user option `@agent`,
+whose value is "claude" or "codex". Auto-tagging at startup inspects the
+DIRECT children of each pane's shell PID and matches their command lines
+against:
+
+  - argv[0] basename "claude" or "codex"
+  - npm package paths "@anthropic" / "claude-code", "@openai/codex" /
+    "codex-cli"
+  - path-anchored binary names like "/claude" or "/codex"
+
+We deliberately do NOT recurse past direct children — Claude Code spawns
+codex-as-MCP-server, and recursion would falsely tag claude panes as codex.
+
+`auto_tag()` runs at `setup()` and also lazily on every send when no tagged
+pane is found. It does not overwrite existing tags (so manual |:AgentTag|
+decisions are respected). To force a re-detect after a wrong tag is set,
+use |:AgentRescan|.
+
+==============================================================================
+6. TROUBLESHOOTING                                       *agent-troubleshooting*
+
+Auto-tag set the wrong agent ~
+
+    Run |:AgentRescan|. If still wrong, capture this diagnostic and share:
+
+>bash
+    for id in $(tmux list-panes -F '#{pane_id}'); do
+      pid=$(tmux display -p -t "$id" '#{pane_pid}')
+      echo "=== $id ==="
+      pgrep -P "$pid" | xargs -n1 ps -o pid=,args= -p
+    done
+<
+
+"No claude pane in this tmux window" ~
+
+    Either claude isn't running in a sibling pane of this window, or auto-
+    detect can't see it through your launcher (e.g. `mise exec`, `direnv`).
+    Run `:AgentTag claude` to manually tag (after switching from the agent
+    pane back to nvim, so tmux's `!` resolves to the agent pane).
+
+Bracketed paste shows escape codes literally ~
+
+    The agent's TUI has bracketed-paste mode disabled. Both Claude Code and
+    Codex enable it by default; if you see literal "[200~" in the output,
+    check the terminal emulator and tmux versions.
+
+Module didn't reload after editing ~
+
+    Lua modules are cached. After editing `lua/agent/init.lua`:
+
+>vim
+    :lua package.loaded.agent = nil
+    :luafile %
+<
+
+    Or just quit and relaunch Neovim — that's what most edits warrant.
+
+vim:tw=78:ts=8:ft=help:norl:

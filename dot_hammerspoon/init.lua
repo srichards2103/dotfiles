@@ -1,9 +1,14 @@
--- Cmd+Ctrl+T → iTerm
-hs.hotkey.bind({"cmd", "ctrl"}, "t", function()
-  hs.application.launchOrFocus("iTerm")
+-- Cmd+Ctrl+F → Ghostty
+hs.hotkey.bind({"cmd", "ctrl"}, "f", function()
+  hs.application.launchOrFocus("Ghostty")
 end)
 
--- Cmd+Ctrl+B → Chrome
-hs.hotkey.bind({"cmd", "ctrl"}, "b", function()
+-- Cmd+Ctrl+D → Chrome
+hs.hotkey.bind({"cmd", "ctrl"}, "d", function()
   hs.application.launchOrFocus("Google Chrome")
+end)
+
+-- Cmd+Ctrl+S → Spotify
+hs.hotkey.bind({"cmd", "ctrl"}, "s", function()
+  hs.application.launchOrFocus("Spotify")
 end)
