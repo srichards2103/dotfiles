@@ -355,15 +355,79 @@ local function line_code(path, old_line, new_line)
   return ("%s_%s_%s"):format(digest:match("^(%x+)"), old_line or 0, new_line or 0)
 end
 
-local function line_range(path, side, start_line, end_line)
+-- Parse the unified diff between two SHAs into hunk headers. We use
+-- --unified=0 because we only need each hunk's old/new ranges to map a line
+-- from one side of the diff to the other; surrounding context is irrelevant.
+local function diff_hunks(cwd, base_sha, head_sha, old_path, new_path)
+  local output, err = system({
+    "git",
+    "diff",
+    "--unified=0",
+    "--no-color",
+    base_sha,
+    head_sha,
+    "--",
+    old_path,
+    new_path,
+  }, nil, cwd)
+  if not output then
+    return nil, err
+  end
+
+  local hunks = {}
+  for line in (output .. "\n"):gmatch("(.-)\n") do
+    local old_start, old_count, new_start, new_count =
+      line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
+    if old_start then
+      hunks[#hunks + 1] = {
+        old_start = tonumber(old_start),
+        old_count = old_count == "" and 1 or tonumber(old_count),
+        new_start = tonumber(new_start),
+        new_count = new_count == "" and 1 or tonumber(new_count),
+      }
+    end
+  end
+
+  return hunks, nil
+end
+
+-- Resolve a line in one diff pane to its (old_line, new_line, type) across the
+-- diff. Context lines exist on both sides; added lines only on "new"; removed
+-- lines only on "old". GitLab needs both numbers for context lines to build a
+-- line_code, which is the crux of the "line_code can't be blank" failure.
+local function resolve_lines(hunks, side, line)
+  local shift = 0
+  for _, hunk in ipairs(hunks) do
+    local start = side == "new" and hunk.new_start or hunk.old_start
+    local count = side == "new" and hunk.new_count or hunk.old_count
+
+    if line < start then
+      break
+    end
+
+    if count > 0 and line < start + count then
+      if side == "new" then
+        return nil, line, "added"
+      end
+      return line, nil, "removed"
+    end
+
+    shift = shift + (hunk.new_count - hunk.old_count)
+  end
+
+  if side == "new" then
+    return line - shift, line, "context"
+  end
+  return line, line + shift, "context"
+end
+
+local function line_range(hunks, side, path, start_line, end_line)
   if start_line == end_line then
     return nil, nil
   end
 
-  local start_old = side == "old" and start_line or nil
-  local start_new = side == "new" and start_line or nil
-  local end_old = side == "old" and end_line or nil
-  local end_new = side == "new" and end_line or nil
+  local start_old, start_new, start_type = resolve_lines(hunks, side, start_line)
+  local end_old, end_new, end_type = resolve_lines(hunks, side, end_line)
 
   local start_code, start_err = line_code(path, start_old, start_new)
   if not start_code then
@@ -377,13 +441,13 @@ local function line_range(path, side, start_line, end_line)
 
   return {
     start = {
-      type = side,
+      type = start_type == "removed" and "old" or "new",
       old_line = start_old,
       new_line = start_new,
       line_code = start_code,
     },
     ["end"] = {
-      type = side,
+      type = end_type == "removed" and "old" or "new",
       old_line = end_old,
       new_line = end_new,
       line_code = end_code,
@@ -422,7 +486,19 @@ local function build_position(visual)
   local old_path = entry.oldpath or entry.path
   local new_path = entry.path
   local range_path = side == "old" and old_path or new_path
-  local range, range_err = line_range(range_path, side, start_line, end_line)
+
+  local hunks, hunks_err = diff_hunks(
+    cwd,
+    version.base_commit_sha,
+    version.head_commit_sha,
+    old_path,
+    new_path
+  )
+  if not hunks then
+    return nil, hunks_err
+  end
+
+  local range, range_err = line_range(hunks, side, range_path, start_line, end_line)
   if range_err then
     return nil, range_err
   end
@@ -437,11 +513,12 @@ local function build_position(visual)
     line_range = range,
   }
 
-  if side == "old" then
-    position.old_line = end_line
-  else
-    position.new_line = end_line
-  end
+  -- Resolve both sides for the anchored line. Context lines carry both
+  -- old_line and new_line so GitLab can derive the line_code; added/removed
+  -- lines carry only their own side, with the other left nil.
+  local old_line, new_line = resolve_lines(hunks, side, end_line)
+  position.old_line = old_line
+  position.new_line = new_line
 
   return {
     project_id = project_id,

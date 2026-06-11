@@ -1,0 +1,8 @@
+- [ ] Frontend UI
+  - Identify all affected routes / screens / components
+  - Check loading, empty, error, and success states
+  - Run frontend build / lint for touched package
+  - Complete `.shipfeat/ui-review.md` (Playwright walkthrough + findings)
+  - Capture screenshots under `.shipfeat/screenshots/`
+  - Upload screenshots to MR (`upload_mr_screenshots.sh`)
+  - Acceptance: UI review checklist complete, screenshots on MR

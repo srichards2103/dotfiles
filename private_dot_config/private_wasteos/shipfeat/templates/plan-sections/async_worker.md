@@ -1,0 +1,5 @@
+- [ ] Async worker / task
+  - Locate task module and queue configuration
+  - Add test covering task body (unit or integration as repo standard)
+  - Verify task is registered and idempotent where required
+  - Acceptance: task test green, no orphan schedules

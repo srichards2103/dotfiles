@@ -1,0 +1,20 @@
+---
+description: Shipfeat MR comment queue — consume pending GitLab review feedback first
+alwaysApply: true
+---
+
+# Shipfeat MR comment queue
+
+If **`.shipfeat/mr-comment-ready.json`** exists in this worktree:
+
+1. **Before any other work**, read **`.shipfeat/pending-mr-comment-prompt.md`**.
+2. Follow **`wasteos-mr-comment-watch`** — any **tracked** change (including file deletes) needs **commit + push** before GitLab resolve.
+3. Before resolve: `require_branch_pushed.sh` must pass. Resolve only via `resolve_mr_discussion.sh`.
+4. When the batch is fully handled:
+
+```bash
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/require_branch_pushed.sh"
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/consume_mr_comment_prompt.sh"
+```
+
+Do not ignore the queue. Do not mark review work complete without running the consume script.

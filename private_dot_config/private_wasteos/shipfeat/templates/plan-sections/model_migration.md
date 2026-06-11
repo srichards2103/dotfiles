@@ -1,0 +1,7 @@
+- [ ] Model / migration
+  - Follow `.agents/skills/backwards-compatible-migrations/SKILL.md`
+  - Inspect generated migration (no accidental destructive ops)
+  - Run `makemigrations --check` in backend container
+  - Run migrate or `db_deploy_and_restore_fast` per tier / profile
+  - Confirm migration leaf state matches develop
+  - Acceptance: migrate clean, drst gate passed if required

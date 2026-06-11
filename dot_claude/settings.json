@@ -1,0 +1,49 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile /Users/samrichards/code/wasteos-feature-577-outbound-removal-bridge-ticket/backend/bridge/services/_helpers.py /Users/samrichards/code/wasteos-feature-577-outbound-removal-bridge-ticket/backend/bridge/services/ticket_lines.py /Users/samrichards/code/wasteos-feature-577-outbound-removal-bridge-ticket/backend/bridge/services/outbound_ticket_lines.pyk)",
+      "mcp__codegraph__codegraph_explore",
+      "mcp__codegraph__codegraph_search",
+      "mcp__codegraph__codegraph_node",
+      "mcp__codegraph__codegraph_callers",
+      "mcp__codegraph__codegraph_callees",
+      "mcp__codegraph__codegraph_impact",
+      "mcp__codegraph__codegraph_files",
+      "mcp__codegraph__codegraph_status"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f*)",
+      "Bash(git branch -D *)",
+      "Bash(rm -rf *)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "claude-fable-5[1m]",
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "explanatory-output-style@claude-plugins-official": true,
+    "context7@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {},
+  "effortLevel": "medium",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "light-daltonized",
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
+}

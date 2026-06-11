@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/shipfeat-mr-comment-before-prompt.sh",
+        "matcher": "UserPromptSubmit"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/shipfeat-mr-comment-stop.sh",
+        "loop_limit": null
+      }
+    ]
+  }
+}

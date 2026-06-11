@@ -1,0 +1,4 @@
+- [ ] Infra / CI
+  - List pipelines or deploy scripts touched
+  - Run local equivalent check if available
+  - Acceptance: CI config valid, documented in `.shipfeat/summary.md`

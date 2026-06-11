@@ -1,0 +1,11 @@
+{
+  "tier": "M",
+  "feature_slug": "my-feature-slug",
+  "change_types": ["backend_api", "frontend_ui"],
+  "requires_frontend_build": true,
+  "requires_playwright_review": true,
+  "requires_openapi_regen": false,
+  "requires_db_restore": true,
+  "requires_domain_parity_check": false,
+  "requires_external_review": false
+}

@@ -1,0 +1,17 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/bin/bash
+# Re-runs whenever the Brewfile changes.
+# Brewfile hash: {{ includeTemplate "dot_Brewfile.tmpl" . | sha256sum }}
+set -uo pipefail
+
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# Homebrew 6 refuses third-party taps until explicitly trusted.
+brew trust hashicorp/tap localstack/tap 2>/dev/null || true
+
+echo "==> brew bundle install --global (this can take a long time on first run)"
+if ! brew bundle install --global; then
+  echo "WARNING: brew bundle reported failures. Fix and retry with:" >&2
+  echo "  brew bundle install --global" >&2
+fi
+{{ end -}}

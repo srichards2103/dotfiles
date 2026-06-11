@@ -1,0 +1,9 @@
+- [ ] Backend API / service
+  - Locate analogous API / view / service / serializer / test patterns
+  - Confirm permission model for branch-owned records
+  - Implement service-layer write path (`transaction.atomic`, branch checks)
+  - Add happy-path and sad-path API tests
+  - Run targeted pytest (log in `.shipfeat/commands.jsonl` if used)
+  - Run `docker exec ${COMPOSE_PROJECT_NAME}-backend-1 python manage.py check`
+  - Regenerate OpenAPI if request/response schema changed
+  - Acceptance: tests green, self-review against code-review standard

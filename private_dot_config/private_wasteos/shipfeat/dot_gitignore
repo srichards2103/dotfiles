@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Self-referential convenience symlink (resolves to a machine-specific absolute path)
+/shipfeat
+
+# Generated architecture-review bundle (rebuilt by build_architecture_bundle.sh;
+# aggregates files from across ~/.config/wasteos and feature worktrees)
+/SHIPFEAT_ARCHITECTURE_REVIEW_BUNDLE.txt
+
+# Local credentials — never commit. Real file lives at ~/.config/wasteos/shipfeat.env
+shipfeat.env
+*.env
+*.env.local
+
+# Editor / OS noise
+*.swp
+*~

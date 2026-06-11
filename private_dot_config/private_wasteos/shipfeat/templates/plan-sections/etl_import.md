@@ -1,0 +1,5 @@
+- [ ] ETL / import
+  - Identify import command or task entry point
+  - Run import against restored DB (drst if profile requires)
+  - Record row counts / parity vs baseline if applicable
+  - Acceptance: import completes without error on feature branch data

@@ -1,0 +1,21 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/bin/bash
+# Tools that ship their own curl installers (not in Homebrew the way we use them).
+set -uo pipefail
+
+install_if_missing() {
+  local name="$1" url="$2"
+  if command -v "$name" >/dev/null 2>&1; then
+    echo "$name already installed — skipping."
+    return 0
+  fi
+  echo "==> Installing $name"
+  if ! curl -fsSL "$url" | bash; then
+    echo "WARNING: $name installer failed — install manually from $url" >&2
+  fi
+}
+
+install_if_missing claude       "https://claude.ai/install.sh"
+install_if_missing opencode     "https://opencode.ai/install"
+install_if_missing cursor-agent "https://cursor.com/install"
+{{ end -}}

@@ -143,12 +143,12 @@ drst() {
   local root="$(git rev-parse --show-toplevel)"
   sed -i '' "s/^BOOTSTRAP_WSKIPS=.*/BOOTSTRAP_WSKIPS=True/" "$root/dev.env"
   sed -i '' "s/^RUN_MIGRATIONS=.*/RUN_MIGRATIONS=True/" "$root/dev.env"
-  "$root/deploy/db_deploy_and_restore.sh"
+  "$root/deploy/db_deploy_and_restore_fast.sh"
 }
 drstn() {
   local root="$(git rev-parse --show-toplevel)"
   sed -i '' "s/^BOOTSTRAP_WSKIPS=.*/BOOTSTRAP_WSKIPS=False/" "$root/dev.env"
-  "$root/deploy/db_deploy_and_restore.sh"
+  "$root/deploy/db_deploy_and_restore_fast.sh"
 }
 
 blogz() {
@@ -190,3 +190,49 @@ set -o vi
   printf "\r\033[K"
   print -z "$cmd"
 }
+
+# openmr — push current branch and open a GitLab MR into develop, via glab.
+#   openmr [-y] [title]   (title defaults to the branch name)
+#   env: OPENMR_TARGET — target branch (default: develop)
+#        OPENMR_YES=1  — skip the confirmation prompt
+openmr() {
+  local assume_yes="${OPENMR_YES:-0}"
+  [[ "$1" == "-y" ]] && { assume_yes=1; shift; }
+
+  local branch
+  branch=$(git symbolic-ref --quiet --short HEAD) || {
+    echo "openmr: not on a branch (detached HEAD?)" >&2; return 1; }
+  local target="${OPENMR_TARGET:-develop}"
+  local title="${1:-$branch}"
+
+  if [[ $assume_yes != 1 ]]; then
+    printf 'openmr: push %s and open MR → %s? [y/N] ' "$branch" "$target"
+    read -q _ans || { echo; echo "openmr: aborted."; return 1; }
+    echo
+  fi
+
+  git push -u origin "$branch" || return 1
+
+  # Idempotent: if a merge request for this branch already exists, just open
+  # it; otherwise create one first. --fill skips every optional glab prompt
+  # (so this is safe to fire from a keybinding) and --title pins the title to
+  # the branch name regardless of commit messages. Pure glab CLI.
+  if glab mr view "$branch" >/dev/null 2>&1; then
+    echo "openmr: MR already exists for $branch — opening"
+  else
+    glab mr create --source-branch "$branch" --target-branch "$target" \
+      --title "$title" --fill --yes || return 1
+  fi
+  glab mr view "$branch" --web
+}
+
+# Ctrl-X Ctrl-G: type `openmr` and run it (vi-mode keymaps). The command
+# still asks for y/N confirmation before pushing, so a stray chord is safe.
+openmr-widget() { BUFFER="openmr"; zle accept-line; }
+zle -N openmr-widget
+bindkey -M viins '^X^G' openmr-widget
+bindkey -M vicmd '^X^G' openmr-widget
+
+
+# Added by Antigravity CLI installer
+export PATH="/Users/samrichards/.local/bin:$PATH"

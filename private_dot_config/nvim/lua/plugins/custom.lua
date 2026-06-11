@@ -178,10 +178,61 @@ return {
     end,
   },
 
-  -- snacks picker: show hidden files in <leader>ff
+  -- codernvim: drive the codex/cursor CLIs headlessly for inline AI edits.
+  -- Loaded from the local dev copy in the data dir.
+  {
+    dir = vim.fn.stdpath("data") .. "/codernvim",
+    name = "codernvim",
+    cmd = { "Codernvim", "CodernvimEdit", "CodernvimAsk", "CodernvimChat" },
+    -- Eager keymaps (init runs at startup) so visual-range commands get the
+    -- range natively; the plugin still lazy-loads on first use.
+    init = function()
+      vim.keymap.set("x", "<leader>ce", ":CodernvimEdit<cr>", {
+        silent = true, desc = "AI edit selection (codernvim)",
+      })
+      vim.keymap.set("n", "<leader>cc", "<cmd>CodernvimChat<cr>", {
+        silent = true, desc = "Toggle codernvim chat",
+      })
+      vim.keymap.set("n", "<leader>ck", "<cmd>CodernvimAsk<cr>", {
+        silent = true, desc = "Ask codernvim (codebase Q&A)",
+      })
+    end,
+    opts = {
+      backend = "cursor", -- `:Codernvim config` to switch to "codex"
+      backends = {
+        cursor = { model = "composer-2.5" },
+      },
+      -- blue (new) / red (old): the blue/red axis gives real hue separation
+      -- under red-green colour vision; the +/- gutter signs carry meaning too.
+      colors = {
+        add = { fg = "#82b1ff", bg = "#0e2240" }, -- new: blue
+        delete = { bg = "#3a1518" }, -- old: red
+      },
+      inline = {
+        keymaps = {
+          -- buffer-local, active only while reviewing a proposed diff
+          accept = "<leader>cy", -- accept hunk (yes)
+          reject = "<leader>cn", -- reject hunk (no)
+          accept_all = "<leader>cY",
+          reject_all = "<leader>cN",
+          next = "]c",
+          prev = "[c",
+        },
+      },
+    },
+    config = function(_, opts)
+      require("codernvim").setup(opts)
+    end,
+  },
+
+  -- snacks: show hidden files in <leader>ff; disable smooth-scroll animation.
+  -- The per-scroll repaint animation is the dominant cause of laggy scrolling
+  -- inside tmux: each animation frame is a full-viewport redraw that the
+  -- multiplexer must re-diff and re-emit before Ghostty ever renders it.
   {
     "folke/snacks.nvim",
     opts = {
+      scroll = { enabled = false },
       picker = {
         sources = {
           files = {
@@ -231,6 +282,28 @@ return {
       { "<C-j>", "<cmd>TmuxNavigateDown<cr>" },
       { "<C-k>", "<cmd>TmuxNavigateUp<cr>" },
       { "<C-l>", "<cmd>TmuxNavigateRight<cr>" },
+    },
+  },
+
+  -- pyright: only type-check OPEN files, never the whole workspace.
+  -- Whole-workspace mode makes pyright re-index the entire wasteos tree
+  -- (multiplied across every git worktree) and pin a CPU core forever.
+  -- basedpyright key is set too so the cap survives a LazyVim default flip.
+  {
+    "neovim/nvim-lspconfig",
+    opts = {
+      servers = {
+        pyright = {
+          settings = {
+            python = { analysis = { diagnosticMode = "openFilesOnly" } },
+          },
+        },
+        basedpyright = {
+          settings = {
+            basedpyright = { analysis = { diagnosticMode = "openFilesOnly" } },
+          },
+        },
+      },
     },
   },
 }

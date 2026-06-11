@@ -1,0 +1,3794 @@
+================================================================================
+WASTEOS SHIPFEAT — COMPLETE ARCHITECTURE REVIEW BUNDLE (for ChatGPT / external review)
+================================================================================
+Generated: 2026-06-04
+Purpose: Full source dump of shipfeat install + price-list steering reference + analysis.
+
+HOW TO USE
+----------
+Review the complete tooling below. Part 1 is narrative/analysis; Parts 2+ are FULL
+SOURCE FILES (scripts, zsh launcher, skills, hooks, templates).
+
+Deliver:
+  1. Unified Shipfeat v2 design (price-list steering + shipfeat automation)
+  2. Gaps and failure modes in current shipfeat
+  3. Prioritized improvements to scripts/workflow
+  4. Answers to Part 1 questions
+
+================================================================================
+PART 1 — ANALYSIS (price-list pattern vs shipfeat)
+================================================================================
+
+PRICE-LIST SUCCESS PATTERN (docs/specs/price-list-refactor/)
+- design.md — authoritative spec
+- implementation-stages.md — durable ledger (checkboxes + commit SHAs)
+- goal-loop-prompt.md — pasteable agent loop
+- price_list_baseline.json — measurable terminal parity gate
+- docs/steering/code-review-standard.md — quality gate (same as ~/.config/wasteos/)
+
+Why it worked: durable state, one stage at a time, per-stage self-review, terminal
+multi-reviewer gate, no scope invention.
+
+SHIPFEAT TODAY (~/.config/wasteos/shipfeat/)
+- Phases: scope → implement → drst → pytest → open MR → MR watcher → screenshots
+- Ephemeral .shipfeat/plan.md vs committed implementation-stages.md
+- MR loop: session.json + watch_mr_comments.sh + Cursor hooks + glab scripts
+
+PROPOSED SHIPFEAT V2 (summary)
+- Tier S/M/L features
+- Tier L uses goal-loop + implementation-stages like price-list
+- Terminal gate scaled by tier
+- Always inject docs/steering in prompt.md
+- Harden: open_mr requires session; setup-mr-loop for Cursor-only starts
+
+OPEN QUESTIONS FOR REVIEWER
+1. Commit implementation-stages.md on branch or gitignore?
+2. Three tiers vs always split large work into multiple MRs?
+3. Minimal terminal gate for small features?
+4. Generalize baseline/parity beyond price-list?
+5. code-review-standard in repo vs ~/.config only?
+6. Auto Codex review in shipfeat?
+7. Poll vs webhook for MR comments?
+8. Script improvements (open_mr fallback init_session, etc.)?
+
+INSTALL LAYOUT
+  ~/.config/wasteos/shipfeat.zsh          — zsh entry + tmux launcher
+  ~/.config/wasteos/shipfeat/             — SKILL.md, scripts/, hooks/, templates/
+  ~/.config/wasteos/skills/               — wasteos-mr-comment-watch, wasteos-mr-upload-photos
+  ~/.config/wasteos/shipfeat.env          — SHIPFEAT_APP_EMAIL, PASSWORD, HOST
+  ~/.config/wasteos/code-review-standard.md
+
+WORKTREE ARTIFACTS (.shipfeat/ gitignored)
+  prompt.md, plan.md, summary.md, session.json
+  pending-mr-comment-prompt.md, mr-comment-ready.json, mr-watch-state.json
+  screenshots/, mr-photos-uploaded.json, mr-watch.log, stop-mr-watch
+
+SCRIPT INDEX (full source in Part 4)
+  _worktree_root.sh          — resolve worktree vs tooling paths
+  init_session.sh            — session.json for MR watcher
+  record_mr_open.sh          — set mr_iid after MR exists
+  open_mr.sh                 — push + glab mr create
+  seed_mr_watch_state.sh     — ignore existing MR notes
+  watch_mr_comments.sh       — poll GitLab ~45s
+  fetch_new_mr_notes.py      — filter new human notes
+  dispatch_mr_comment.sh     — queue for Cursor/tmux agent
+  require_branch_pushed.sh   — gate before resolve/consume
+  resolve_mr_discussion.sh   — reply + resolve thread
+  consume_mr_comment_prompt.sh — clear queue after push
+  upload_mr_screenshots.sh  — GitLab upload API + mr note
+  require_mr_photos_uploaded.sh — Phase 6 gate
+  playwright_shipfeat_init.sh — 1920x1080 browser
+  app_url.sh                 — nginx URL from .worktree.env
+  wait_for_backend_ready.sh  — /api/common/readyz/
+  run-agent.sh               — codex|claude|agent launcher
+  install_cursor_hooks.sh  — copy hooks into worktree .cursor/
+  trust_worktree.sh          — Cursor/Codex/Claude trust
+  trust_all_wasteos_worktrees.sh
+
+================================================================================
+PART 2 — PRICE-LIST STEERING REFERENCE (full sources)
+================================================================================
+
+################################################################################
+# FILE: goal-loop-prompt.md
+# PATH: /Users/samrichards/code/wasteos-feature-price-list-refactor/docs/specs/price-list-refactor/goal-loop-prompt.md
+################################################################################
+
+# Goal-Loop Prompt — Price List Refactor
+
+Paste the block below to seed the implementation loop. It is self-contained: it points at the three
+governing documents and defines the loop, the per-stage gate, and the terminal gate. Keep it short on
+purpose — the detail lives in the referenced docs, which the agent must read.
+
+---
+
+```
+You are implementing the Price List refactor end to end on the branch `feature/price-list-refactor`.
+
+Authoritative documents (read all three before doing anything, and re-open them as needed):
+- docs/specs/price-list-refactor/design.md            — the design (r6). Source of truth for every
+                                                         model, service, API, migration, and FE change.
+- docs/specs/price-list-refactor/implementation-stages.md — the ordered stages, their design references,
+                                                         per-stage acceptance gates, and the durable
+                                                         progress ledger you tick off.
+- docs/steering/code-review-standard.md               — the quality gate every stage must pass.
+
+Your loop, repeated until every stage is checked:
+1. Open implementation-stages.md and find the FIRST unchecked stage.
+2. Implement exactly that stage, following the design.md sections it cites. Do not skip ahead, do not
+   batch stages, do not invent scope beyond the stage. Respect the "Key sequencing constraints"
+   (C1–C4) — in particular the Legacy-rename-first ordering and the per-stage M3/M4 migration slices.
+3. Self-review your diff against code-review-standard.md using its "Suggested Agent Prompt Block" and
+   the stage's listed focus rules. Fix every violation. If you intentionally break a rule, write the
+   justification (per §39) in the stage's Notes — and "to avoid an import error" is never a valid one.
+4. Run the stage's acceptance checks: its tests + `manage.py check`, and at milestones
+   `./deploy/db_deploy_and_restore_fast.sh`. Backend tests run via
+   `docker exec ${COMPOSE_PROJECT_NAME}-backend-1 pytest tests/<path>` (read COMPOSE_PROJECT_NAME from
+   .worktree.env). Everything must be green before you proceed.
+5. Commit (one commit per stage: `pl-refactor(stage N): <title>`).
+6. Tick the stage's box AND update the Progress ledger row in implementation-stages.md (state + SHA +
+   a one-line note). This file is your durable memory — keep it current so progress survives a context
+   reset; on resume, trust the ledger and continue from the first unchecked stage.
+7. Move to the next stage.
+
+Non-negotiable working rules (from code-review-standard.md — apply continuously, not just at the end):
+- API views stay thin; all writes/authorization/workflows/transactions live in services.
+- Branch access is checked in the service layer on every branch-owned write.
+- Use TextChoices / enums / constants — never hard-code backend-owned values (backend or frontend).
+- Prevent invalid states with model/DB constraints over clean()/service guards; keep clean() thin.
+- One owner per domain concept; no duplicated resolvers; no thin wrappers; justified helpers only;
+  domain-specific names.
+- Code lives in the owning module. Multi-write ops are atomic. Errors are surfaced, never swallowed.
+- Use existing repo factories/fixtures and the user_with_permission helper; add happy + sad path tests.
+- Frontend forms use Zod + zodResolver + parseApiError + visible field errors; shadcn + @/ imports +
+  semantic colours; consume backend enums, don't recreate them.
+- Keep the diff focused and free of cruft. The spec/design docs under docs/specs/price-list-refactor/
+  are NOT part of the feature diff.
+
+When the last implementation stage (Stage 10) is done, run Stage 11 — the terminal gate — and do not
+declare done until ALL of its items are green:
+  full backend suite; frontend build+lint; OpenAPI regenerated (no drift); migrations clean and rebased
+  on develop (resolve-migrations); `db_deploy_and_restore_fast` green end to end with zero new
+  load_wskips row failures; price-list inventory parity vs the committed baseline
+  (price_list_baseline.json) — per-type, line, value, and FK-integrity counts all match; a Codex review;
+  and a parallel sub-agent review panel (architecture / implementation-correctness / code-quality) with
+  all valid findings resolved.
+
+The single hardest success criterion: after the full deploy+import, the new per-domain tables must hold
+exactly the same price-list inventory the old god-model produced (baseline parity), and
+`db_deploy_and_restore_fast` must succeed with everything imported exactly as it is today. Treat code
+that merely compiles and passes a happy path as unfinished.
+```
+
+---
+
+## Notes for the human seeding this
+
+- **Run Stage 0 yourself (or first) and confirm the committed `price_list_baseline.json`** before
+  handing the loop off — the parity gate is only as trustworthy as that baseline, and it must be taken
+  on *current* code.
+- **Permission posture:** the loop needs to run docker/pytest/migrations and edit code freely. Grant
+  the corresponding tool permissions (or run in an auto-accept mode for `Bash`/`Edit`/`Write`) or it
+  will stall on prompts at every stage.
+- **Long-running deploys:** `db_deploy_and_restore_fast` and a first `pytest --create-db` are slow
+  (tens of minutes). Run them in the background and poll; never run two `pytest --create-db` at once
+  (they deadlock — see the worktree-test memory).
+- **Codex / sub-agents** in Stage 11 are the same review pattern already used while authoring the
+  design (Codex read-only + a parallel agent panel); the loop should reuse it.
+
+################################################################################
+# FILE: implementation-stages.md
+# PATH: /Users/samrichards/code/wasteos-feature-price-list-refactor/docs/specs/price-list-refactor/implementation-stages.md
+################################################################################
+
+# Price List Refactor — Implementation Stages
+
+**Branch:** `feature/price-list-refactor`
+**Design:** `design.md` (r6) — the source of truth for every model, service, API, migration, and FE
+change. This file does **not** restate the design; it sequences it into reviewable stages and defines
+the per-stage and final review gates. Each stage cites the design sections to implement.
+
+**Companion:** `goal-loop-prompt.md` — the prompt that drives the loop over these stages.
+**Review gate:** `../../steering/code-review-standard.md` — every stage's code must pass this before its
+box is ticked.
+
+---
+
+## How this document is used (the loop)
+
+This file is the **durable state** of the implementation. The loop is:
+
+1. Find the **first unchecked stage** below.
+2. Implement it, following the cited `design.md` sections.
+3. **Self-review the diff against `code-review-standard.md`** (the per-stage gate — see below). Fix
+   anything that fails. If a rule is intentionally violated, write the justification in the stage's
+   notes.
+4. Run the stage's acceptance checks: **`manage.py check` + `makemigrations --check` + targeted
+   `pytest --create-db`**. **Do NOT run `db_deploy_and_restore_fast` per stage** (user direction,
+   2026-06-04 — it's ~9 min each and slows the loop). The full `db_deploy` + import-parity gate runs
+   **once, at Stage 11 only**. (This overrides C3's "run at milestones".)
+5. **Commit** (one commit per stage, message `pl-refactor(stage N): <title>`).
+6. **Tick the box** in this file and append a one-line note (commit SHA + anything notable).
+7. Move to the next stage.
+
+Do **not** tick a stage until its gate passes. Do **not** skip ahead. The final stage runs the full
+multi-reviewer gate.
+
+### Per-stage review gate (applied every stage)
+
+Run the **Suggested Agent Prompt Block** self-review from `code-review-standard.md` §1069, focused on
+the rules most relevant to that stage (each stage lists its focus rules). At minimum, for every stage:
+thin API views (§2), business logic in services (§4), validate-once at boundaries (§5), model invariants
+over `clean()` spaghetti (§6), `TextChoices` not magic strings (§7–10), branch access in services
+(§13), one owner per concept (§17), justified helpers + domain naming (§19–21), code in the owning
+module (§22), atomic multi-writes (§26), clean diff / no cruft (§36–37), and—where the stage adds an
+API—happy + sad path tests with repo factories (§32–33). The agent must be able to point to where each
+relevant rule is satisfied.
+
+---
+
+## Key sequencing constraints (read before Stage 1)
+
+These are correctness constraints that the linear `design.md` §21 ordering underspecifies:
+
+- **C1 — Legacy rename comes FIRST (Stage 2), before any new same-named model.** The new
+  `pricing.SurchargePriceListLine` and `bridge.TipLineRegulatoryConfig` reuse the *exact names* of legacy
+  models in the *same app* (design §14 M0). Python (not just migration state) cannot hold two classes of
+  the same name in one app module. So the very first code move is renaming the legacy models to `Legacy*`
+  and repointing every existing consumer to those names — purely mechanical, app stays green. Only then
+  are the new names free.
+- **C2 — Delete-and-recreate: NO data migration (design §14, r7).** The backup is empty and everything is
+  reseeded by `load_wskips_all`, so there is no data to migrate (`code-review-standard.md` §35). The
+  migration is authored across stages but is purely schema: M0 `Legacy*` rename (Stage 2, code-
+  coexistence only — the shared value-bag can't be dismantled per-kind); each domain stage (4–7)
+  `CreateModel`s its new tables, **repoints its loader/adapter + its runtime consumers**, and does a
+  **clean consumer-FK swap** (drop old column, add new `PROTECT` column — no backfill, the reseed
+  recreates the rows); the final cutover (Stage 9) drops the now-empty `Legacy*` tables. **Do NOT write
+  a `RunPython` data backfill.** Each stage leaves the app reading whichever models its consumers have
+  been repointed to; the legacy tables sit empty until dropped.
+- **C3 — `db_deploy_and_restore_fast` is the integration gate; it migrates an EMPTY backup then seeds via
+  `load_wskips_all`.** So the migration runs on no data (trivial), and the real test is the **import** —
+  the loaders/adapters must build the new models such that the resulting inventory matches the baseline.
+  The FK swaps and table drops are exercised on the empty restore; the parity gate exercises the import.
+  Run `db_deploy_and_restore_fast` at milestones, not only at the end.
+- **C4 — Rebase the migration set onto `develop` before the final gate.** `develop` moves; the
+  `resolve-migrations` skill exists for exactly this. A clean leaf is required (code-review-standard §35).
+
+---
+
+## Stage 0 — Baseline & verification harness  ✅
+
+**Goal:** capture, from the **current** code, the exact price-list inventory a full deploy+import
+produces, so "everything imported exactly as it is already" is a measurable, committed fact. (The backup
+is **empty**; the entire inventory comes from `load_wskips_all`, so this baseline is purely the *import*
+output — which is exactly what the refactor must preserve, C2/C3.)
+
+**Deliverables:**
+- A tenant-scoped read-only command, e.g. `pricing/management/commands/price_list_inventory.py`, run as
+  `tenant_context_manage.py wskips price_list_inventory --json`, that reports for the wskips schema:
+  - price-list **count per kind** (`customer_service`, `vendor_tip`, `customer_tip`, `vendor_service`,
+    `surcharge`; `driver_service` is **confirmed 0** in the current import — assert it stays 0);
+  - **line count** and **primitive-value count** per kind;
+  - **FK integrity**: # jobs with a non-null `price_list_line`, # `BridgeTicketLine` with
+    `tip_price_list_line`, # `OutboundRemovalTicket(Line)` with `vendor_tip_price_list_line`, #
+    `TipLineRegulatoryConfig` rows;
+  - the `load_wskips_all` row-failure counts for the price-list loaders (from
+    `backend/logs/load_wskips_all_summary.json`).
+- Run `./deploy/db_deploy_and_restore_fast.sh` on the current branch tip, then the command; commit the
+  output as `docs/specs/price-list-refactor/price_list_baseline.json` (numbers only).
+
+**Acceptance / gate:** baseline JSON committed; the command is read-only and reusable. (Stage 11 re-runs
+the equivalent against the new schema and asserts equality.)
+
+**Notes (captured 2026-06-03):**
+- Command: `backend/pricing/management/commands/price_list_inventory.py` (read-only; at Stage 11 swap its
+  query internals to the new per-domain models but keep the JSON output shape identical).
+- Baseline: `price_list_baseline.json`. Deploy `db_deploy_and_restore_fast` = 8m39s, **`MINIFIED_JSONS=False`
+  (FULL PRD dataset)** — the Stage 11 parity check **must** re-run with `MINIFIED_JSONS=False` or counts
+  won't match. Backup is empty; all 89,303 price lists come from `load_wskips_all`.
+- Inventory totals: **89,303** price lists (0 drafts). By type: `customer_service` 47,500 (job 45,466 /
+  account 1,723 / site 311), `customer_tip` 41,554 (bridge_ticket_line 39,498 / account_at_branch 2,048 /
+  branch 8), `vendor_tip` 159 (global), `surcharge` 90. **`driver_service` 0** (confirms the removal),
+  **`vendor_service` 0**. FK integrity: jobs_with_price_list_line 45,466, bridge_ticket_lines_with_tip
+  39,498, outbound_removal_lines_with_vendor_tip 7,781, **tip_line_regulatory_configs 0**.
+- ⚠️ **Import doesn't exercise `vendor_service` or `TipLineRegulatoryConfig` (both 0).** Their import
+  parity is trivially 0→0, so correctness for those two rests on unit/API tests (Stages 5–6), not the
+  parity gate. Worth confirming with the team whether the wskips dataset *should* contain vendor-service
+  rates / regulatory config, or whether 0 is correct.
+- Import row-failure baseline (price-list loaders): **`load_vendor_tip_rates`: 2**. The broader 6,380
+  row failures (`load_charges` 6071, `load_jobs` 244, …) are pre-existing and non-price-list; the parity
+  gate asserts *zero new* failures vs this baseline.
+- _(commit SHA: pending — not yet committed)_
+
+---
+
+## Stage 1 — P0: break the `pricing.primitives → operations.models` cycle  ✅
+
+**Design:** §0.1.
+**Goal:** move `JobLineType` / `OperationalClass` to a model-free `operations/enums.py`; repoint
+`pricing.primitives` to import from there; re-export from `operations/models/enums.py` for back-compat.
+**Code-review focus:** §1 (imports at top, no cycle-hiding local imports), §22 (owning module), §37 (no
+unrelated churn).
+**Acceptance:** `manage.py check` passes; full suite green; pure prep, zero behaviour change.
+
+**Notes:** Created model-free `operations/enums.py` holding `JobLineType` + `OperationalClass` (verbatim
+move); `operations/models/enums.py` re-exports both for back-compat (≈20 existing importers untouched);
+`pricing/primitives.py` repointed to `operations.enums`. `manage.py check` clean (boot smoke-test = no
+cycle); enum identity + values preserved across all import paths; `tests/pricing/test_primitives*.py`
+27 passed (2 pre-existing errors: missing `api_client` fixture on soon-to-be-deleted kind endpoints,
+untouched by this stage). _(SHA: see ledger)_
+
+---
+
+## Stage 2 — Legacy rename (M0)  ❌ DROPPED (superseded — see approach change below)
+
+**Status:** Abandoned per user direction (2026-06-03). The blanket `Legacy*` rename existed only to let
+the god-model coexist with same-named new models during the incremental build. In practice it forced
+fragile churn: renaming the M2M-bearing `PriceList` changes its M2M through-table FK columns
+(`pricelist_id → legacypricelist_id`), which rippled into perf-sensitive throwaway legacy loaders
+(`bulk_pricing.py`, `bulk_price_lists.py`) and raw SQL. Since the whole legacy stack is deleted anyway,
+the rename is not worth it.
+
+**Approach change (replaces Stage 2 / C1):** **No rename.** The legacy god-model `PriceList`, the shared
+`PriceListLineValue` value bag, and the legacy line models keep their names and keep working, untouched,
+through the transition (legacy loaders unchanged — no M2M churn). New per-domain models are built
+**additively** in their owning apps with distinct names. Only **two** genuine same-app class-name
+collisions exist (design §14 M0): `pricing.SurchargePriceListLine` and `bridge.TipLineRegulatoryConfig`.
+Each is resolved by **deleting the legacy model when its replacement is built** in that domain's stage
+(atomic in one commit — surcharge in Stage 4, bridge config in Stage 6), including dropping the matching
+value-bag FK. The remaining god-model + value bag + legacy line models + generic services/apis/serializers
++ `applies_to_kinds`/`get_primitives_for_kind` are deleted at the **cutover (Stage 9)**. Migrations are
+delete-and-recreate (no RunPython, C2); correctness is proven by the import-parity gate (C3).
+
+**Notes:** Reverted the in-progress rename cleanly; base back at Stage 1 (`manage.py check` + `makemigrations
+--check` clean). Verified during the attempt that the rename was behaviour-identical to base (same test
+pass/fail set) — useful evidence the per-domain repoints won't change behaviour either.
+
+---
+
+## Stage 3 — Spine (bases, registry, scope access, primitives, uprating skeleton)  ✅
+
+**Design:** §5 (incl. §5.1 `scope_access.py`, §5.2 `AbstractServiceLine`), §7 (`PriceListType`), §8
+(retire `applies_to_kinds` / `get_primitives_for_kind`; per-line `ALLOWED_PRIMITIVES`), §9.1 (`UprateBatch`
+`kind→price_list_type`, `UprateBatchItem`), §9.2 (`UpratingHandler` protocol + registry), shared
+`serialize_primitive_values` (§11 / §22 residual).
+**Goal:** land the abstract spine + the empty uprating registry; no concrete domain models yet (except
+that the surcharge model arrives in Stage 4). Unit-test the base behaviours directly via a throwaway
+concrete test model or the first real one.
+**Code-review focus:** §6 (invariants: overlap, scope validation as model-level; thin `clean()`), §1
+(no local imports — `scope_access` uses `apps.get_model`), §17/§22 (one home for scope/cascade logic),
+§19–21 (naming, justified structure).
+**Acceptance:** bases unit-tested (`resolve_for_scope_cascade` incl. `scope_branch`, overlap, scope
+validation, `branch_id` resolution, `build_draft_from` forcing `from_date=effective_date`); `check`
+passes; no consumer repointed yet.
+
+**Notes:** Purely additive — 6 new files, zero existing files touched (legacy stack intact). Added
+`pricing/models/base.py` (AbstractPriceList/Line/ServiceLine/LineValue + PriceListScope + scope helpers +
+`resolve_for_scope_cascade` + `build_draft_from`), `pricing/services/scope_access.py` (apps.get_model,
+cycle-free; tightens account_at_branch/job/bridge_ticket_line per §5.1), `pricing/models/registry.py`
+(`PriceListType`), `pricing/services/uprating_registry.py` (protocol + register/get/`uprating_types`),
+`pricing/serializers/primitive_values.py` (shared serialize + option shape). `check` + `makemigrations
+--check` clean (bases abstract → no tables/migrations); `tests/pricing/test_uprating_registry.py` 4
+passed. **Deviations from the design's Stage-3 scope, all to keep legacy green under the additive build
+([[project_price_list_refactor_preexisting_failures.md]] approach):** (a) §9.1 `UprateBatch.kind →
+price_list_type` + `UprateBatchItem` deferred to **Stage 8** (renaming the field now breaks the legacy
+uprating engine); (b) §8 `applies_to_kinds`/`get_primitives_for_kind` removal deferred to **Stage 9**
+(legacy surcharge line + the generic kind-primitives API still use them); (c) §5.2 `allowed_primitive_codes`
+import hoisted to module top (the design showed a local import — §1 prefers top). Transient duplication
+(diff helpers, `PriceListScope`, `serialize_primitive_values`/`PriceListOptionSerializer` exist on both
+new bases and legacy) is removed at cutover (Stage 9). DB-backed base behaviours unit-tested in Stage 4
+via the first concrete model (surcharge).
+
+---
+
+## Stage 4 — Surcharge domain (pricing)  ⬜
+
+**Design:** §6.6, §10 (surcharge service), §11 (per-domain APIs incl. the **periods** presentation),
+§9.4 (handler shape), §12/§13.3 (the **range/invoice-type/scope** surcharge resolver — not `current_on`).
+**Goal:** first full domain end-to-end, pricing-local, lowest risk. New `SurchargePriceList(+Line,+Value)`
++ `CreateModel` migration (name freed in Stage 2); service (`pricing/services/surcharge_price_lists.py`);
+APIs/urls/serializers (one-view-one-endpoint; preserve `surcharge_periods` + `surcharge_period_count`);
+register `SurchargeUpratingHandler`; **repoint the surcharge loader (`load_wskips_fuel_levy`) + the
+surcharge ETL + `invoices/services/surcharges.py` + projection** to the new model. No data migration
+(C2) — the import reseeds into the new table.
+**Code-review focus:** §2–4 (thin views, service-owned writes, atomic §26), §6 (uniq/overlap
+constraints), §12 (explicit nested serializers for the periods shape), §13 (branch access), §23/§24
+(preview vs generation parity for surcharge projection; dedupe key on `surcharge_price_list_line_id`),
+§33 (happy/sad API tests).
+**Acceptance:** surcharge API + uprating + invoice projection tests green; old surcharge tests repointed
+or replaced; `db_deploy` still green; inventory surcharge counts unchanged.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 5 — Vendor tip + vendor service (vendors)  ⬜
+
+**Design:** §6.1 (vendor tip, `ALLOWED_SCOPES={GLOBAL}`, `_overlap_identity` owner override), §6.2
+(vendor service), §10 (repoint `vendors/services/vendors.py`), §13.2 (the
+`OutboundRemovalTicket.vendor_tip_price_list_line` repoint → `vendors.VendorTipPriceListLine`), §13.4
+(vendor adapters).
+**Goal:** vendor tip (the canonical template) + vendor service, both end-to-end. Models + `CreateModel`
+migrations; repoint the vendor services + adapters (`load_vendor_tip_rates`, `vendor_service_rates`) to
+the new models; **clean-swap** the outbound-removal vendor-tip FK (drop old column, add new `PROTECT`, no
+backfill); register both handlers. No data migration (C2).
+**Code-review focus:** §6 (the `_overlap_identity` owner override — assert via test, §6.1 sharp edge),
+§13 (vendor branch-access via the existing vendor-branch check, not the generic scoped one — confirm the
+right check per path), §17/§18 (reuse the vendor service template; no thin wrappers), §33.
+**Acceptance:** vendor tip/service + outbound-removal resolution tests green; inventory vendor counts
+unchanged; `db_deploy` green.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 6 — Tip / bridge material (bridge)  ✅
+
+**Design:** §6.4 (`TipPriceList(+Line,+Value)` + `TipLineRegulatoryConfig`, BRANCH-only config), §10
+(`bridge/services/materials.py` + `ticket_pricing.py`), §13.2 (`BridgeTicketLine.tip_price_list_line`
+repoint → `bridge.TipPriceListLine`), §13.4 (bridge imports/ETL).
+**Goal:** customer-tip / bridge-material end-to-end across its three scopes (BRANCH / ACCOUNT_AT_BRANCH /
+BRIDGE_TICKET_LINE). Models + `CreateModel` migration (incl. the new `bridge.TipLineRegulatoryConfig`
+whose name was freed in Stage 2); repoint bridge services + ticket pricing + bridge imports
+(`load_bridge_material_rates`, `load_bridge_customer_material_rates`); **clean-swap** the
+`BridgeTicketLine` tip FK. No data migration (C2).
+**Code-review focus:** §6 (RegulatoryConfig BRANCH-only invariant — prefer a constraint where feasible,
+else thin `clean()`), §23 (ticket-line snapshot creation matches the resolution rules), §25 (ticket_date
+drives rate selection), §13, §33.
+**Acceptance:** bridge material + ticket-line pricing + regulatory-config tests green; inventory
+customer_tip counts unchanged; `db_deploy` green.
+
+**Notes (uncommitted; left unstaged per instruction):** New `bridge/models/tip_price_list.py`
+(`TipPriceList` + `Line` + `Value` + same-named `TipLineRegulatoryConfig`); legacy
+`bridge/models/materials.py:TipLineRegulatoryConfig` and legacy `pricing.TipPriceListLine` both deleted
+(customer-tip was the last consumer of the latter). Value bag now carries only
+`service_line` + `driver_service_line` (removed `tip_line` FK + its uniq constraint + rebuilt
+`exactly_one_line_parent`; pruned the CUSTOMER_TIP/VENDOR_TIP entries from
+`LINE_MODEL_BY_KIND`/`…RELATED_NAME…`/`PARENT_FK_NAME` and the generic tip serializer + `resolve_tip_rate`).
+`BridgeTicketLine.tip_price_list_line` FK swapped `pricing → bridge` (same-app PROTECT). Two
+hand-authored migrations (delete-and-recreate, no RunPython): `bridge/0009` (DeleteModel legacy config →
+CreateModel the 4 new models + constraints → AlterField the ticket-line FK) and
+`pricing/0054` (RemoveConstraint uniq + exactly_one → RemoveField tip_line → DeleteModel
+TipPriceListLine → re-add exactly_one over service/driver), with `pricing/0054` depending on `bridge/0009`
+so no inbound FK blocks the drop. `TipUpratingHandler` registered at `bridge/apps.ready()`. Inventory
+harness now counts customer_tip off the new triple + `tip_line_regulatory_configs` off the new config.
+RegulatoryConfig BRANCH-only invariant enforced via a thin `clean()` (a OneToOne→line whose
+`price_list.scope` must be BRANCH; a DB constraint can't reach across the FK to the parent's scope).
+`check` + `makemigrations --check` clean. `tests/bridge` all green (incl. 2 new files:
+`test_tip_uprating_handler.py`, `test_tip_price_list_models.py`); ported the legacy bridge material/ticket
+tests to the new factories. `tests/invoices` failures are the known pre-existing set (A/B-confirmed on a
+stash: invoice generation/emailing/list/permissions + 2 account-base-charge projection tests, plus the
+near-midnight `bin_rental` date-flake that passes in isolation) — no NEW failures. db_deploy deferred to
+Stage 11. _(SHA: pending — left unstaged)_
+
+---
+
+## Stage 7 — Service (operations) + the `Job.price_list_line` cutover (heaviest)  ⬜
+
+**Design:** §6.3 (`ServicePriceList(+Line,+Value)`), §10 (`operations/services/service_price_lists.py`,
+`resolve_service_price_list_lines`), §11 (`ServiceRateMatchApi` — port `__str__`/scope props/
+`_serialize_line`/`PriceListOptionSerializer` exactly), §12 (the exact candidate set + tie-break for
+equivalence), §13.1 (`Job.price_list_line` → `operations.ServicePriceListLine`, the four `clean()`
+checks, `upsert_job_price_list_line`), §13.4 (pricing adapters/ETL).
+**Goal:** customer-service end-to-end including the heaviest consumer repoint. Model + `CreateModel`
+migration; service + resolver + match API; repoint the pricing adapters/ETL (`load_price_lists` /
+`bulk_price_lists`) + `operations/services/jobs/pricing.py` (`upsert_job_price_list_line`) +
+`lifecycle.py` + `job_pricing.py` type hint to the new model; **clean-swap** `Job.price_list_line` (drop
+old column, add new `PROTECT`, no backfill — the reseed recreates jobs with the new FK via the repointed
+`load_jobs`/`upsert_job_price_list_line`); register `ServiceUpratingHandler`. No data migration (C2).
+**Code-review focus:** §17 (one resolver owner — replaces `get_price_list_lines_for_job_parameters`),
+§16 (match API option shape is a serializer concern, not the service), §6 (Job FK `PROTECT`, the four
+clean checks as invariants), §25 (scheduled-date rate selection), §23/§24 (job base-charge preview vs
+generation parity — `price_list_line_to_primitives`), §33 (job pricing golden-master).
+**Acceptance:** job pricing + match + uprating(customer_service) tests green; a **golden-master** test
+pins `resolve_service_price_list_lines` output against the old resolver; inventory customer_service +
+job-FK counts unchanged; `db_deploy` green.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 8 — Uprating generic lifecycle + API  ⬜
+
+**Design:** §9.3 (generic `UpratingService` driven by `UprateBatchItem`, the eligibility/already-in-batch
+guards, row locking, `finalise` capping `item.source`), §9.5 (API: `price_list_type` field, single
+`DraftLineSerializer` over the dimension-generic DTO, `UpratingTypeListApi`), §9.6 (all batch reads via
+`batch.items`).
+**Goal:** wire the generic batch workflow now that all handlers are registered. No `find_active_original`
+(deleted — finalise uses `item.source`). Single-type-batch invariant guard.
+**Code-review focus:** §2 (thin uprating APIs), §4/§26 (service-owned, atomic finalise with locking),
+§17 (one dispatch point — the registry), §21 (handler/method names), §33 (the **success test**: a fake
+handler registered in a test proves a new type needs zero edits to `uprating.py`; plus clone→finalise
+overlap regression, `item.source` capping, single-type guard).
+**Acceptance:** full uprating suite green incl. the success + regression tests; `check` + schema clean.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 9 — Cutover / contract + delete the god-model  ⬜
+
+**Design:** §14 (final drop + cross-app drop deps), §18 (deletion list).
+**Goal:** `DeleteModel` all `Legacy*` models/tables (now empty/unused — the consumer-FK swaps already
+happened per domain in Stages 5–7, so no inbound `PROTECT` FK remains); delete the generic
+`pricing/{services,apis,serializers,urls}/price_lists.py`, `KIND_RULES`, the three dispatch dicts, the
+`PriceListKind` enum, the `pricing price-list-kinds/scopes` enum endpoints + `list_price_list_*` services.
+**Code-review focus:** §35 (drop ordering: the per-domain FK swaps precede the legacy table drops —
+declare the cross-app deps `pricing.<drop> → {operations,bridge}.<fk-swap migration>`; **no RunPython**;
+clean single leaf), §36 (remove all cruft — dead helpers, stale migrations, commented code), §37
+(focused diff). Grep proves **zero** references to any `Legacy*`/`PriceList`/`PriceListKind` remain.
+**Acceptance:** full suite green; `check` clean; `db_deploy_and_restore_fast` green (the whole M0–M5 wave
+applies to the backup); inventory still equals baseline.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 10 — Frontend decomposition  ⬜
+
+**Design:** §15 (all of it): remove the `RateConfiguration` kind-dispatcher, `PriceListModal`/
+`PriceListBasicTab` kind-branching, and `priceListsService.js`; extract `components/rate-grid/`
+(pre-extraction audit §15.2.1); build per-domain editors (service-pricing, vendor-service-rates,
+surcharges) + per-domain API clients; remove `PriceListManager` + `customers/pages/PriceLists.jsx`;
+uprating type registry `UPRATING_EDITOR_BY_TYPE` + `…/types/` endpoint; remove `pricingPriceListKinds/
+Scopes` enum registrations; register new pages in `users/permissions.py` (both paths, §16).
+**Code-review focus:** §11 (no hard-coded backend enums — consume the contract), §29 (Zod + zodResolver +
+`parseApiError` + visible field errors), §30 (shadcn, `@/` imports, semantic colours, `[&_svg]:size-*`),
+§14/§15 (backend-derived affordances; loading-vs-denied), §34 (meaningful FE coverage), §22 (editors in
+their domain modules).
+**Acceptance:** `npm run build` + lint pass; the `verify`/`run` skills smoke job-form pricing, vendor
+tip, bridge material, surcharge editor, and the uprating flow; no orphaned routes/imports.
+
+**Notes:** _(SHA)_
+
+---
+
+## Stage 11 — Final gate (multi-reviewer + parity)  ⬜
+
+**⚠️ Two backend API gaps found in Stage 10 (must close before done):** (1) job-scoped service price-list LINE create/update endpoints — Stage 9 deleted the generic `pricing/price-lists/lines/*`, Stage 7 didn't add `operations/service/price-lists/lines/*` replacements (the job-form custom-price flow 404s); (2) `VendorServicePriceList` CRUD API — model+handler exist (Stage 5) but `vendors/urls` has no vendor-service CRUD routes. Also: 3 new FE editor dialogs use Zod safeParse+useState not RHF+zodResolver (matches predecessor PriceListModal; substance of §29 met).
+
+Only finish when **every** item below is green. Fix-and-recheck until they are.
+
+1. **Full backend suite** green: `docker exec ${COMPOSE_PROJECT_NAME}-backend-1 pytest tests` (per
+   CLAUDE.md). ≥80% coverage on new code.
+2. **Frontend** `npm run build` + lint green.
+3. **OpenAPI/schema** regenerated and committed; no drift (code-review-standard §12).
+4. **Migrations clean + rebased on `develop`** (C4; `resolve-migrations`): single leaf, no stale/dup
+   migrations, no destructive one-step on a live path beyond the agreed no-prod wave.
+5. **`db_deploy_and_restore_fast` green end-to-end** on a clean worktree — restore the (empty) backup +
+   apply the whole schema migration set (rename → per-domain create/FK-swap → final drop; no RunPython) +
+   `load_wskips_all` + `load_domains`, zero new row failures in `load_wskips_all_summary.json` vs the
+   Stage 0 baseline.
+6. **Import/inventory parity (the decisive gate)**: `tenant_context_manage.py wskips price_list_inventory
+   --json` (now querying the new per-domain tables) **equals** `price_list_baseline.json` — per-type
+   counts, line counts, value counts, and FK-integrity counts all match. This is what proves the
+   loader/adapter repointing is correct (there is no data migration to lean on). Any delta is investigated
+   and resolved (`driver_service` is expected to be 0 in the baseline — confirmed).
+7. **Self-review** the entire diff against `code-review-standard.md` (the full Pre-Submit Checklist §951
+   and Definition of Done §1040).
+8. **Codex review**: ask Codex (read-only, repo-grounded) to review the implemented diff against the
+   design + `code-review-standard.md`; incorporate valid findings only.
+9. **Sub-agent review panel** (spawn in parallel, consolidate, apply valid findings): (a) **architecture**
+   — does the implementation match `design.md` and look native to the repo (§38)? (b) **implementation /
+   correctness** — behavioural equivalence on job pricing, bridge tickets, surcharge projection, vendor
+   tip; migration data-path correctness; (c) **code quality** — the full `code-review-standard.md` pass
+   (layering, naming, invariants, duplication, defensive noise, diff hygiene).
+10. **Cruft check** (§36): the design/spec docs under `docs/specs/price-list-refactor/` are **not** part
+    of the feature MR diff unless explicitly requested; no debug code, dead helpers, stale migrations.
+
+**Definition of done:** items 1–10 green, all reviewer findings resolved, and `db_deploy_and_restore_fast`
++ inventory parity prove the import produces exactly the pre-refactor price-list data.
+
+**Notes:** _(reviewer findings + resolutions)_
+
+---
+
+## Progress ledger
+
+| Stage | Title | State | SHA |
+|---|---|---|---|
+| 0 | Baseline & verification harness | ✅ | (uncommitted) |
+| 1 | P0: break import cycle | ✅ | 16f126761 |
+| 2 | Legacy rename (M0) | ❌ DROPPED | — (no rename; collisions handled per-domain) |
+| 3 | Spine | ✅ | a7cef9938 |
+| 4 | Surcharge domain | ✅ | f49ad7681 — surcharge parity EXACT (90/90/90, scope 63/3/24); customer_service delta is a baseline-DATE artifact (from_date=date.today; stable across same-date runs), not a regression |
+| 5 | Vendor tip + vendor service | ✅ | 86fc3d9b1 |
+| 6 | Tip / bridge material | ✅ | (pending) — new bridge TipPriceList triple + RegulatoryConfig (BRANCH-only clean()); legacy bridge.TipLineRegulatoryConfig + pricing.TipPriceListLine + value-bag tip_line DELETED; BridgeTicketLine FK swapped; check+mm+tests green |
+| 7 | Service + Job FK cutover | ✅ | 14b6daa22 |
+| 8 | Uprating lifecycle + API | ✅ | 290b2ee79 |
+| 9 | Cutover / contract (M5) | ✅ | a6e65a4df |
+| 10 | Frontend decomposition | ✅ | b7958c712 (+ 4c6b5a3db closes the 2 API gaps: operations job-line CRUD + vendors service CRUD) |
+| 11 | Final gate (reviewers + parity) | ✅ subst(parity+suite+panel+fixes) / MR-prep pending | IMPORT-PARITY PASS; full suite 2800 pass / 0 refactor regressions (25 fails all pre-existing, A/B + diff-scope proven); FE build+lint OK; OpenAPI generates (fixed is_active bug); 3-agent panel (arch SOUND/correctness SOLID/quality HIGH) all valid findings RESOLVED (dedup helper, uprating eligibility gate, is_active, FE .match crash). MR-prep remaining: resolve-migrations rebase on develop (do at merge vs then-current develop); exclude spec docs + price_list_inventory harness from MR (§36); optional Codex 4th-opinion |
+
+
+### Stage 11 review panel + parity outcomes (2026-06-04)
+- **Import-parity: PASS** (date-stable buckets EXACT vs baseline; migration set applies to empty backup; 0 new row failures). Account/site/global customer_service vary only by the documented `from_date=date.today` artifact.
+- **Architecture review: SOUND** (no CRITICAL/HIGH). LOW notes: 0057 dep is transitively-safe; `pricing/services/primitives.py:_KIND_ALLOWED_PRIMITIVES` is the one surviving kind->primitive dict (load-bearing for the kept PrimitivesForKindApi); `nulls_distinct=False` asymmetry is deliberate.
+- **Correctness review: SOLID** — job pricing / surcharge projection / bridge / vendor resolution all verified equivalent (candidate sets, tie-breaks, dates, finalise overlap). Actionable: **MEDIUM** uprating eligibility widened to `current_on` in 3 handlers (can add-but-not-finalise a future-dated original; restore `.filter(to_date__isnull=True)`). LOW: customer-tip uprating now exposes ACCOUNT_AT_BRANCH (intentional per §6.4); job-line create/update now enforce branch access (design-endorsed tightening — keep).
+- **Code-quality review: HIGH** — all hard rules respected. Actionable: **HIGH** `_upsert_rate_primitives` duplicated 5x (extract one shared helper, §17). LOW: PriceListLineValueFactory shim (5 call sites); detail-GET no branch-access (pre-existing, matches legacy).
+- **Real bug fixed (191bf36ca):** ServiceType.is_active referenced by 2 serializers + get_available_service_types (FieldError/ImproperlyConfigured) — faithfully-ported latent legacy bug, surfaced by OpenAPI schema-gen.
+
+### Remaining before MR
+1. Apply the 2 actionable findings (uprating eligibility gate; `_upsert_rate_primitives` extraction).
+2. Confirm full backend suite = only known pre-existing failures.
+3. `resolve-migrations` rebase on develop (single clean leaf).
+4. MR-hygiene (§36): EXCLUDE docs/specs/price-list-refactor/* + the price_list_inventory harness + baseline JSON from the feature MR.
+5. Codex review (optional; sub-agent panel done).
+
+================================================================================
+PART 3 — SHIPFEAT CORE (SKILL + README + ZSH LAUNCHER)
+================================================================================
+
+################################################################################
+# FILE: shipfeat/SKILL.md
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/SKILL.md
+################################################################################
+
+---
+name: wasteos-ship-feat
+description: End-to-end WasteOS feature delivery in a worktree — scope, implement with code-review-standard gate, drst, docker pytest, open GitLab MR, Playwright UI screenshots uploaded to the MR via wasteos-mr-upload-photos (mandatory). Use when shipfeat launches you or the user says ship feature / wasteos-ship-feat.
+disable-model-invocation: true
+argument-hint: '<feature-branch> [extra context from user]'
+---
+
+# WasteOS ship feature (end-to-end)
+
+You are running the full feature-ship workflow for branch **$ARGUMENTS** (branch name is the first token; remaining text is optional user context).
+
+Work only inside the **feature worktree** (`SHIPFEAT_WORKTREE` in the prompt, or current directory with `.worktree.env`). Do not skip phases. Do not open the MR until backend tests pass.
+
+Helper scripts live in the **global shipfeat install** (`SHIPFEAT_HOME`, default `~/.config/wasteos/shipfeat`). Always run them from the feature worktree root so they target the correct branch and docker project.
+
+## Credentials (local only)
+
+Before Playwright login, `source ~/.config/wasteos/shipfeat.env` in the shell if the file exists.
+
+Load app login from that file:
+
+- `SHIPFEAT_APP_EMAIL`
+- `SHIPFEAT_APP_PASSWORD`
+- optional `SHIPFEAT_APP_HOST` (hostname only, default `wskips.encore.localhost`)
+
+Never commit credentials. If the env file is missing, stop before the UI screenshot phase and tell the user to create `~/.config/wasteos/shipfeat.env`.
+
+## Phase 1 — Scope
+
+1. Read the user context and any `docs/specs/*/design.md` that matches the branch or task.
+2. Search the codebase for analogous patterns (services, APIs, tests, frontend modules).
+3. Write a **loose implementation plan** at `.shipfeat/plan.md` with ordered tasks (files to touch, tests to add, APIs/UI areas). Keep it short — a checklist, not pre-written code. **Do not commit `plan.md` to the MR** — it is local shipfeat scratch only; if it was ever tracked, remove it with commit + push when a reviewer asks.
+
+## Phase 2 — Implement (task by task)
+
+For each task in `.shipfeat/plan.md`:
+
+1. Implement the smallest vertical slice.
+2. **Self-review** all new/changed code against `~/.config/wasteos/code-review-standard.md` (imports at top, thin API views, service-layer writes, naming, no unnecessary defensive code, branch checks on writes, `transaction.atomic`, frontend semantic colors, `parseApiError`, one APIView per endpoint, etc.).
+3. Fix anything that fails that bar before moving on.
+4. Commit logical chunks with clear messages.
+
+If migrations are required, follow `.agents/skills/backwards-compatible-migrations/SKILL.md` in the feature worktree.
+
+## Phase 3 — Stack + database
+
+From the **feature worktree** root. This is the same as the `drst` zsh helper — use the **fast** restore script only:
+
+```bash
+cd "${SHIPFEAT_WORKTREE:-$PWD}"
+
+sed -i '' 's/^BOOTSTRAP_WSKIPS=.*/BOOTSTRAP_WSKIPS=True/' dev.env
+sed -i '' 's/^RUN_MIGRATIONS=.*/RUN_MIGRATIONS=True/' dev.env
+
+./deploy/db_deploy_and_restore_fast.sh
+```
+
+Do **not** run `db_deploy_and_restore.sh` (slow path). `db_deploy_and_restore_fast.sh` restores the DB, runs migrations and wskips bootstrap, then brings the full stack up once.
+
+If it fails, fix the cause or stop — do not continue to tests.
+
+If containers are not running after restore, run `./deploy/dev_up.sh`.
+
+Then wait until the API is ready (up to ~10 minutes). Run from the feature worktree root:
+
+```bash
+"${SHIPFEAT_HOME:?}"/scripts/wait_for_backend_ready.sh
+```
+
+`wait_for_backend_ready.sh` polls **`http://127.0.0.1:${BACKEND_PORT}/api/common/readyz/`** (HTTP 200, body `READY`). This checks database + cache readiness.
+
+| Endpoint | URL (worktree) | Use |
+|----------|----------------|-----|
+| **Readiness** | `http://127.0.0.1:${BACKEND_PORT}/api/common/readyz/` | Phase 3 gate (`wait_for_backend_ready.sh`) |
+| **Liveness** | `http://127.0.0.1:${BACKEND_PORT}/api/common/healthz/` | Lightweight OK probe only |
+| **Wrong** | `http://127.0.0.1:${BACKEND_PORT}/readyz/` | **404** — not mounted at root |
+
+Same paths work via nginx: `http://127.0.0.1:${NGINX_PORT}/api/common/readyz/`. Playwright / UI login uses **nginx** (`app_url.sh` → `NGINX_PORT`), not `FRONTEND_PORT` alone.
+
+## Phase 4 — Tests
+
+```bash
+set -a && source .worktree.env && set +a
+docker exec "${COMPOSE_PROJECT_NAME}-backend-1" pytest <paths from your plan>
+```
+
+Run every test file you added or changed, plus any regression area you touched. All must pass before continuing.
+
+## Phase 5 — GitLab MR
+
+Push and open the MR (non-interactive). From the feature worktree root:
+
+```bash
+"${SHIPFEAT_HOME:?}"/scripts/open_mr.sh
+```
+
+Confirm the MR exists in GitLab (`glab mr view` for the current branch). Note the MR URL in `.shipfeat/summary.md`.
+
+## Phase 5b — MR comment watcher (all agents)
+
+`open_mr.sh` updates `.shipfeat/session.json` with the MR IID. `watch_mr_comments.sh` (tmux pane started by `shipfeat`) polls GitLab for new human MR notes.
+
+**Read and follow `wasteos-mr-comment-watch`** (`~/.config/wasteos/skills/wasteos-mr-comment-watch/SKILL.md`). Install overview: `~/.config/wasteos/shipfeat/README.md`.
+
+| Situation | Required |
+|-----------|----------|
+| Any **branch** change (code, UI, **file delete**, config) | Implement → test (if applicable) → **commit** → **push** → `require_branch_pushed.sh` → UI screenshots if visual → GitLab reply → **`resolve_mr_discussion.sh`** |
+| Unclear / no branch change | GitLab reply with a **question** → **leave thread open** (no resolve) |
+
+**Push before resolve is mandatory.** `resolve_mr_discussion.sh` and `consume_mr_comment_prompt.sh` both call `require_branch_pushed.sh` and exit 1 if you skipped the push. Deleting a tracked file (e.g. `.shipfeat/plan.md`) still requires commit + push.
+
+### Who consumes the queue
+
+| Agent | Delivery |
+|-------|----------|
+| `agent` / `cursor` | `.shipfeat/pending-mr-comment-prompt.md` + Cursor hooks/rule (`install_cursor_hooks.sh`) |
+| `codex` / `claude` | Same pending file + `tmux send-keys` to the agent pane |
+
+When a batch is fully handled: `require_branch_pushed.sh` then `consume_mr_comment_prompt.sh`.
+
+Stop the watcher: `touch .shipfeat/stop-mr-watch` or merge/close the MR.
+
+## Phase 6 — UI screenshots on the MR (mandatory)
+
+**Read and follow `wasteos-mr-upload-photos`** (`~/.config/wasteos/skills/wasteos-mr-upload-photos/SKILL.md` or `$wasteos-mr-upload-photos`). Do not skip upload or finish without a successful script run.
+
+If this feature touched any frontend UI, you must capture and upload screenshots. Backend-only: skip capture only if there is genuinely no UI to show; otherwise still upload any verification shots.
+
+### 6a — Capture
+
+```bash
+mkdir -p .shipfeat/screenshots
+source ~/.config/wasteos/shipfeat.env 2>/dev/null || true
+app_url="$("${SHIPFEAT_HOME:?}"/scripts/app_url.sh)"
+"${SHIPFEAT_HOME:?}"/scripts/playwright_shipfeat_init.sh "$app_url"
+```
+
+`playwright_shipfeat_init.sh` opens the browser and sets viewport **1920×1080** (`playwright-cli resize 1920 1080`). Do not skip the resize.
+
+Use **playwright-cli** (`.agents/skills/playwright-cli/SKILL.md` in the worktree):
+
+- Log in: `[data-testid="loginid"]`, `[data-testid="password"]`, `[data-testid="login-button"]`
+- Navigate every UI surface you changed; one or more screenshots per area
+- Save under `.shipfeat/screenshots/` (`billing-batch-list.png`, etc.)
+- `playwright-cli close`
+
+### 6b — Upload to MR (hard gate)
+
+```bash
+"${SHIPFEAT_HOME:?}"/scripts/upload_mr_screenshots.sh \
+  "$(git branch --show-current)" \
+  .shipfeat/screenshots \
+  "UI verification — $(git branch --show-current)"
+```
+
+Then verify:
+
+```bash
+"${SHIPFEAT_HOME:?}"/scripts/require_mr_photos_uploaded.sh
+```
+
+**Completion is blocked** until `upload_mr_screenshots.sh` exits 0 and `.shipfeat/mr-photos-uploaded.json` exists.
+
+### 6c — Summary
+
+Append to `.shipfeat/summary.md`: MR link, screenshot filenames, and confirmation the MR note was posted.
+
+## Completion
+
+Tell the user: branch name, MR URL, test summary, screenshot list, and link to the MR note with images.
+
+Hard gates before you say "done":
+
+```text
+[ ] upload_mr_screenshots.sh succeeded
+[ ] require_mr_photos_uploaded.sh succeeded
+[ ] .shipfeat/mr-photos-uploaded.json present
+```
+
+If any phase was blocked, say which phase and what they need to do locally.
+
+################################################################################
+# FILE: shipfeat/README.md
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/README.md
+################################################################################
+
+# WasteOS shipfeat (`~/.config/wasteos/shipfeat`)
+
+End-to-end feature delivery: implement → drst → pytest → GitLab MR → UI screenshots → **MR comment feedback loop**.
+
+Entry: `shipfeat <branch> <codex|claude|agent|cursor>` from `shipfeat.zsh`.
+
+| Doc | Purpose |
+|-----|---------|
+| [SKILL.md](./SKILL.md) | Full phase workflow (canonical for all agents) |
+| [../skills/wasteos-mr-comment-watch/SKILL.md](../skills/wasteos-mr-comment-watch/SKILL.md) | MR watcher + push-before-resolve |
+| [../skills/wasteos-mr-upload-photos/SKILL.md](../skills/wasteos-mr-upload-photos/SKILL.md) | Screenshot upload |
+
+Skills are symlinked into `~/.cursor/skills`, `~/.codex/skills`, and `~/.claude/skills` when you run `shipfeat`.
+
+## Layout
+
+```
+shipfeat/
+├── SKILL.md                 # Main workflow
+├── README.md                # This file
+├── hooks/                   # Cursor hooks (symlinked into worktree .cursor/)
+├── templates/
+│   ├── mr-comment-response-instructions.md
+│   └── shipfeat-mr-comments.mdc
+└── scripts/
+    ├── init_session.sh
+    ├── open_mr.sh / record_mr_open.sh
+    ├── watch_mr_comments.sh / dispatch_mr_comment.sh / fetch_new_mr_notes.py
+    ├── require_branch_pushed.sh      # Gate before resolve/consume
+    ├── resolve_mr_discussion.sh      # Reply + resolve (uses gate)
+    ├── consume_mr_comment_prompt.sh
+    ├── install_cursor_hooks.sh
+    ├── upload_mr_screenshots.sh
+    └── run-agent.sh
+```
+
+## Agents
+
+| Agent | Started by | MR comment delivery |
+|-------|------------|---------------------|
+| `codex` | `run-agent.sh` → tmux pane | `tmux send-keys` + pending file |
+| `claude` | same | same |
+| `agent` / `cursor` | same or Cursor Composer | Cursor hooks + rule, or tmux if `dispatch_mode` overridden |
+
+**All agents** must run `require_branch_pushed.sh` before resolving MR threads or calling `consume_mr_comment_prompt.sh`.
+
+## Worktree artifacts (`.shipfeat/`)
+
+Written under the feature worktree (not all committed):
+
+| File | Purpose |
+|------|---------|
+| `session.json` | Branch, MR IID, agent, dispatch mode |
+| `pending-mr-comment-prompt.md` | Active MR comment batch for the agent |
+| `mr-comment-ready.json` | Queue signal |
+| `plan.md` | Phase 1 checklist — **should not be on the MR**; delete via commit+push if reviewer asks |
+| `summary.md` | Ship summary |
+| `screenshots/` | Playwright captures |
+
+## Credentials
+
+`~/.config/wasteos/shipfeat.env` — `SHIPFEAT_APP_EMAIL`, `SHIPFEAT_APP_PASSWORD`, optional `SHIPFEAT_APP_HOST`.
+
+## Health checks (worktree)
+
+After `db_deploy_and_restore_fast.sh`, Phase 3 uses:
+
+```bash
+"${SHIPFEAT_HOME}/scripts/wait_for_backend_ready.sh"
+```
+
+| Check | URL | Success |
+|-------|-----|---------|
+| Readiness (required) | `http://127.0.0.1:${BACKEND_PORT}/api/common/readyz/` | `200` + body `READY` |
+| Liveness (optional) | `http://127.0.0.1:${BACKEND_PORT}/api/common/healthz/` | `200` + body `OK` |
+
+**Do not use** `/readyz/` at the backend host root — Django only exposes readiness at **`/api/common/readyz/`** (see `backend/common/urls.py`, `deploy/do_deploy.sh`).
+
+UI / Playwright: `app_url.sh` prints `http://${SHIPFEAT_APP_HOST}:${NGINX_PORT}/` so login hits nginx (API + frontend), not the raw frontend dev port alone.
+
+################################################################################
+# FILE: shipfeat.zsh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat.zsh
+################################################################################
+
+# shipfeat — launch end-to-end feature ship agent in a new tmux window
+# Canonical install: ~/.config/wasteos/shipfeat.zsh
+# Usage: shipfeat <branch-name> <codex|claude|agent|cursor> [extra context...]
+
+[[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/worktree.zsh" ]] && \
+    source "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/worktree.zsh"
+
+: "${SHIPFEAT_HOME:=$HOME/.config/wasteos/shipfeat}"
+: "${SHIPFEAT_TOOLING:=$SHIPFEAT_HOME}"
+
+_shipfeat_env_file="${HOME}/.config/wasteos/shipfeat.env"
+
+_shipfeat_ensure_tooling() {
+    if [[ ! -f "${SHIPFEAT_HOME}/SKILL.md" ]]; then
+        echo "shipfeat: install not found at SHIPFEAT_HOME=${SHIPFEAT_HOME}" >&2
+        return 1
+    fi
+}
+
+_shipfeat_link_skills() {
+    local skills_root="${HOME}/.config/wasteos/skills"
+    mkdir -p "${HOME}/.cursor/skills" "${HOME}/.codex/skills" "${HOME}/.claude/skills" 2>/dev/null
+
+    _shipfeat_link_one_skill() {
+        local name=$1 src=$2
+        [[ -e "$src" ]] || return 0
+        for agent_dir in "${HOME}/.cursor/skills" "${HOME}/.codex/skills" "${HOME}/.claude/skills"; do
+            local dest="${agent_dir}/${name}"
+            rm -f "$dest" 2>/dev/null || true
+            ln -sf "$src" "$dest" 2>/dev/null || true
+        done
+    }
+
+    _shipfeat_link_one_skill wasteos-ship-feat "${SHIPFEAT_HOME}"
+    _shipfeat_link_one_skill wasteos-mr-upload-photos "${skills_root}/wasteos-mr-upload-photos"
+    _shipfeat_link_one_skill wasteos-mr-comment-watch "${skills_root}/wasteos-mr-comment-watch"
+}
+
+_shipfeat_render_prompt() {
+    local branch=$1
+    local skill_path=$2
+    local tooling=$3
+    local worktree=$4
+    shift 4
+    local extra_context="$*"
+
+    cat <<EOF
+MANDATORY: You must follow the wasteos-ship-feat skill in full before doing anything else.
+
+Read and execute every phase in:
+  ${skill_path}
+
+Also invoke it as \$wasteos-ship-feat if your runtime supports skill commands.
+
+MANDATORY (Phase 5b / MR review): Read and follow wasteos-mr-comment-watch:
+  ${HOME}/.config/wasteos/skills/wasteos-mr-comment-watch/SKILL.md
+
+When .shipfeat/pending-mr-comment-prompt.md exists, handle it before other work.
+Never resolve GitLab threads before require_branch_pushed.sh passes.
+Use resolve_mr_discussion.sh (not raw glab resolve). Run consume_mr_comment_prompt.sh when done.
+
+MANDATORY (Phase 6 / any UI work): Read and follow wasteos-mr-upload-photos:
+  ${HOME}/.config/wasteos/skills/wasteos-mr-upload-photos/SKILL.md
+
+You must run upload_mr_screenshots.sh and require_mr_photos_uploaded.sh before claiming done.
+Do not finish without posting screenshots to the MR as a comment when UI was changed.
+
+SHIPFEAT_HOME=${tooling}
+SHIPFEAT_TOOLING=${tooling}
+SHIPFEAT_WORKTREE=${worktree}
+Export these variables in your shell before running helper scripts from the skill.
+
+Feature branch: ${branch}
+EOF
+
+    if [[ -n "$extra_context" ]]; then
+        printf '\nUser context:\n%s\n' "$extra_context"
+    fi
+}
+
+shipfeat() {
+    if (( $# < 2 )); then
+        cat <<EOF
+Usage: shipfeat <branch-name> <codex|claude|agent|cursor> [extra context...]
+
+Creates or reuses a feature worktree, opens a tmux window, and starts the agent with the
+wasteos-ship-feat workflow (implement → drst → tests → openmr → UI screenshots).
+
+Global install: \${SHIPFEAT_HOME} (default: ~/.config/wasteos/shipfeat)
+
+Credentials: ~/.config/wasteos/shipfeat.env
+
+Must be run inside tmux (or shipfeat will start a tmux session for you).
+EOF
+        return 1
+    fi
+
+    _shipfeat_ensure_tooling || return 1
+
+    local branch=$1
+    local agent=$2
+    shift 2
+
+    case "$agent" in
+        codex | claude | agent | cursor) ;;
+        *)
+            echo "shipfeat: agent must be codex, claude, agent, or cursor" >&2
+            return 1
+            ;;
+    esac
+    [[ "$agent" == cursor ]] && agent=agent
+
+    local repo
+    repo=$(_wt_repo_root) || {
+        echo "shipfeat: run this inside a WasteOS repository worktree" >&2
+        return 1
+    }
+
+    if [[ -z "$TMUX" ]]; then
+        local session="ship-${branch//\//-}"
+        session="${session:0:32}"
+        echo "shipfeat: starting tmux session '${session}'..."
+        tmux new-session -d -s "$session" -c "$PWD" \
+            "shipfeat '$branch' '$agent' $*"
+        tmux attach -t "$session"
+        return
+    fi
+
+    local target
+    target=$(_wt_worktree_path "$repo" "$branch")
+    if [[ -z "$target" ]]; then
+        echo "shipfeat: creating worktree for ${branch}..."
+        command "$repo/deploy/setup_worktree.sh" "$branch" develop || return $?
+        target=$(_wt_worktree_path "$repo" "$branch")
+    fi
+    [[ -n "$target" ]] || {
+        echo "shipfeat: worktree path not found for ${branch}" >&2
+        return 1
+    }
+
+    _shipfeat_link_skills
+
+    local trust_script="${SHIPFEAT_HOME}/scripts/trust_worktree.sh"
+    if [[ -x "$trust_script" ]]; then
+        "$trust_script" "$target" || echo "shipfeat: warning — could not pre-trust ${target}" >&2
+    fi
+
+    local skill_md="${SHIPFEAT_HOME}/SKILL.md"
+    local run_dir="${target}/.shipfeat"
+    mkdir -p "$run_dir/screenshots"
+    _shipfeat_render_prompt "$branch" "$skill_md" "$SHIPFEAT_HOME" "$target" "$@" >"${run_dir}/prompt.md"
+
+    local runner="${SHIPFEAT_HOME}/scripts/run-agent.sh"
+    chmod +x "${SHIPFEAT_HOME}/scripts/"*.sh 2>/dev/null || true
+
+    local window_name="ship-${branch##*/}"
+    window_name="${window_name:0:32}"
+
+    tmux new-window -n "$window_name" -c "$target"
+    local win=$TMUX_WINDOW
+
+    tmux split-window -h -t "$win" -c "$target" -l 38%
+    tmux split-window -v -t "${win}.1" -c "$target" -l 65%
+
+    local agent_tmux_target="${TMUX}:${win}.1"
+    "${SHIPFEAT_HOME}/scripts/init_session.sh" "$branch" "$agent" "$target" "$agent_tmux_target"
+    "${SHIPFEAT_HOME}/scripts/install_cursor_hooks.sh"
+
+    local watcher="${SHIPFEAT_HOME}/scripts/watch_mr_comments.sh"
+
+    tmux send-keys -t "${win}.0" "nvim" Enter
+    tmux send-keys -t "${win}.1" \
+        "export SHIPFEAT_HOME='${SHIPFEAT_HOME}' SHIPFEAT_TOOLING='${SHIPFEAT_HOME}' && cd '${target}' && '${runner}' '${agent}' '${target}'" Enter
+    tmux send-keys -t "${win}.2" \
+        "export SHIPFEAT_HOME='${SHIPFEAT_HOME}' && cd '${target}' && '${watcher}'" Enter
+
+    tmux select-pane -t "${win}.1"
+
+    echo "shipfeat: branch=${branch} agent=${agent}"
+    echo "shipfeat: feature worktree=${target}"
+    echo "shipfeat: install=${SHIPFEAT_HOME}"
+    echo "shipfeat: prompt=${run_dir}/prompt.md"
+    echo "shipfeat: MR watcher → tmux pane ${win}.2; Cursor dispatch via .cursor/hooks (stop: touch .shipfeat/stop-mr-watch)"
+    if [[ -f "$_shipfeat_env_file" ]]; then
+        echo "shipfeat: credentials → ${_shipfeat_env_file}"
+    else
+        echo "shipfeat: warning — no ${_shipfeat_env_file} (UI login phase will fail)"
+    fi
+}
+
+# Ctrl-X Ctrl-S: shipfeat (prompts for branch + agent in the widget below)
+shipfeat-widget() {
+    vared -p 'branch: ' -c _shipfeat_branch
+    [[ -n "$_shipfeat_branch" ]] || return 0
+    vared -p 'agent (codex|claude|agent): ' -c _shipfeat_agent
+    [[ -n "$_shipfeat_agent" ]] || return 0
+    BUFFER="shipfeat ${_shipfeat_branch} ${_shipfeat_agent}"
+    zle accept-line
+}
+zle -N shipfeat-widget
+bindkey -M viins '^X^S' shipfeat-widget
+bindkey -M vicmd '^X^S' shipfeat-widget
+
+compdef '_wt_branch_complete' shipfeat 2>/dev/null || true
+
+================================================================================
+PART 4 — SHIPFEAT SCRIPTS (full source)
+================================================================================
+
+################################################################################
+# FILE: shipfeat/scripts/_worktree_root.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/_worktree_root.sh
+################################################################################
+
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# Resolve the active feature worktree (cwd or SHIPFEAT_WORKTREE), not the tooling install.
+
+shipfeat_worktree_root() {
+  if [[ -f "${PWD}/.worktree.env" ]]; then
+    printf '%s\n' "$PWD"
+    return 0
+  fi
+  if [[ -n "${SHIPFEAT_WORKTREE:-}" && -f "${SHIPFEAT_WORKTREE}/.worktree.env" ]]; then
+    printf '%s\n' "$SHIPFEAT_WORKTREE"
+    return 0
+  fi
+  echo "shipfeat: run from the feature worktree root (or set SHIPFEAT_WORKTREE)" >&2
+  return 1
+}
+
+shipfeat_tooling_root() {
+  local tooling="${SHIPFEAT_HOME:-${SHIPFEAT_TOOLING:-$HOME/.config/wasteos/shipfeat}}"
+  if [[ ! -f "${tooling}/SKILL.md" ]]; then
+    echo "shipfeat: install not found at ${tooling}" >&2
+    return 1
+  fi
+  printf '%s\n' "$tooling"
+}
+
+################################################################################
+# FILE: shipfeat/scripts/app_url.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/app_url.sh
+################################################################################
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+set -a
+# shellcheck disable=SC1091
+source .worktree.env
+set +a
+
+host="${SHIPFEAT_APP_HOST:-wskips.encore.localhost}"
+port="${NGINX_PORT:-}"
+
+if [[ -z "$port" ]]; then
+  echo "app_url: NGINX_PORT not set in .worktree.env" >&2
+  exit 1
+fi
+
+# Use nginx (not FRONTEND_PORT): API + SPA are served together for Playwright login.
+printf 'http://%s:%s/\n' "$host" "$port"
+
+################################################################################
+# FILE: shipfeat/scripts/consume_mr_comment_prompt.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/consume_mr_comment_prompt.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Mark MR comment batch as handled (call after agent finishes the pending prompt).
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
+# Hard gate: never clear the queue while commits or working-tree changes are unpushed.
+"${script_dir}/require_branch_pushed.sh" || {
+  echo "consume_mr_comment_prompt: blocked — commit, push, then consume" >&2
+  exit 1
+}
+
+ready="${repo_root}/.shipfeat/mr-comment-ready.json"
+pending="${repo_root}/.shipfeat/pending-mr-comment-prompt.md"
+archive_dir="${repo_root}/.shipfeat/consumed"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+mkdir -p "$archive_dir"
+
+if [[ -f "$pending" ]]; then
+  cp "$pending" "${archive_dir}/mr-comment-prompt-${stamp}.md"
+  rm -f "$pending"
+fi
+
+rm -f "$ready"
+
+echo "consume_mr_comment_prompt: archived and cleared queue"
+
+################################################################################
+# FILE: shipfeat/scripts/dispatch_mr_comment.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/dispatch_mr_comment.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Feed new MR comment(s) into the shipfeat agent (Cursor stop hook or tmux pane).
+set -euo pipefail
+
+if (( $# != 1 )); then
+  echo "Usage: dispatch_mr_comment.sh <comment-markdown-file>" >&2
+  exit 1
+fi
+
+comment_file="$1"
+[[ -f "$comment_file" ]] || {
+  echo "dispatch_mr_comment: missing ${comment_file}" >&2
+  exit 1
+}
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+session="${repo_root}/.shipfeat/session.json"
+[[ -f "$session" ]] || {
+  echo "dispatch_mr_comment: no session.json" >&2
+  exit 1
+}
+
+read_session() {
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); v=d.get(sys.argv[2]); print("" if v is None else v)' "$session" "$1"
+}
+
+agent="$(read_session agent)"
+branch="$(read_session branch)"
+mr_url="$(read_session mr_url)"
+mr_iid="$(read_session mr_iid)"
+tmux_target="$(read_session tmux_agent_target)"
+dispatch_mode="$(read_session dispatch_mode)"
+
+shipfeat_home="$(cd "$(dirname "$0")/.." && pwd)"
+instructions="${shipfeat_home}/templates/mr-comment-response-instructions.md"
+
+cd "$repo_root"
+
+prompt_file="${repo_root}/.shipfeat/pending-mr-comment-prompt.md"
+ready_file="${repo_root}/.shipfeat/mr-comment-ready.json"
+
+{
+  echo "# MR review comment dispatch"
+  echo ""
+  echo "Branch: **${branch}**"
+  [[ -n "$mr_url" ]] && echo "MR: ${mr_url}"
+  [[ -n "$mr_iid" ]] && echo "MR IID (API): ${mr_iid}"
+  echo ""
+  echo "Skill: \`wasteos-mr-comment-watch\` — follow every hard rule below."
+  echo ""
+  if [[ -f "$instructions" ]]; then
+    cat "$instructions"
+  else
+    echo "Instructions template missing at ${instructions}"
+  fi
+  echo ""
+  echo "---"
+  echo ""
+  echo "## Comment batch"
+  echo ""
+  cat "$comment_file"
+} >"$prompt_file"
+
+log="${repo_root}/.shipfeat/mr-watch-dispatch.log"
+
+if [[ -z "$dispatch_mode" ]]; then
+  if [[ -n "$tmux_target" ]] && tmux display-message -t "$tmux_target" -p '' >/dev/null 2>&1; then
+    dispatch_mode="tmux"
+  else
+    dispatch_mode="cursor"
+  fi
+fi
+
+if [[ "$dispatch_mode" == "cursor" ]]; then
+  python3 - "$ready_file" "$branch" "$mr_url" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+out, branch, mr_url = sys.argv[1:4]
+payload = {
+    "branch": branch,
+    "mr_url": mr_url or None,
+    "pending_file": ".shipfeat/pending-mr-comment-prompt.md",
+    "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+}
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+PY
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) dispatch → cursor stop hook (pending-mr-comment-prompt.md)" >>"$log"
+  echo "dispatch_mr_comment: queued for Cursor (.shipfeat/mr-comment-ready.json)" | tee -a "$log"
+  exit 0
+fi
+
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) dispatch → tmux pane agent=${agent} branch=${branch}" >>"$log"
+
+if [[ -z "$tmux_target" ]]; then
+  echo "dispatch_mr_comment: no tmux_agent_target in session.json" | tee -a "$log" >&2
+  exit 1
+fi
+
+if ! tmux display-message -t "$tmux_target" -p '' >/dev/null 2>&1; then
+  echo "dispatch_mr_comment: tmux pane not found: ${tmux_target}" | tee -a "$log" >&2
+  exit 1
+fi
+
+instruction="MR review comment on ${branch}. Read .shipfeat/pending-mr-comment-prompt.md — follow wasteos-mr-comment-watch: push fixes, upload UI screenshots, reply + resolve threads when done; if no code change, reply with a question and leave thread open."
+
+tmux select-pane -t "$tmux_target"
+tmux send-keys -t "$tmux_target" C-u 2>/dev/null || true
+tmux send-keys -t "$tmux_target" -l "$instruction"
+tmux send-keys -t "$tmux_target" Enter
+
+echo "dispatch_mr_comment: sent to tmux pane ${tmux_target}" | tee -a "$log"
+
+################################################################################
+# FILE: shipfeat/scripts/fetch_new_mr_notes.py
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/fetch_new_mr_notes.py
+################################################################################
+
+#!/usr/bin/env python3
+"""Return new human MR notes since last_note_id (stdout: JSON array)."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+
+def run(cmd: list[str]) -> str:
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr)
+        sys.exit(1)
+    return result.stdout.strip()
+
+
+def glab_user() -> str | None:
+    try:
+        out = run(["glab", "api", "user"])
+        return json.loads(out).get("username")
+    except SystemExit:
+        return None
+
+
+def is_our_upload(body: str) -> bool:
+    markers = (
+        "wasteos-mr-upload-photos",
+        "wasteos-ship-feat",
+        "UI verification screenshots",
+        "Automated captures from",
+        "Posted via `wasteos-mr-upload-photos`",
+    )
+    return any(m in body for m in markers)
+
+
+def load_session(session_path: str) -> dict:
+    if not os.path.isfile(session_path):
+        return {}
+    with open(session_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def main() -> None:
+    if len(sys.argv) != 4:
+        print(
+            "Usage: fetch_new_mr_notes.py <mr_iid> <state_path> <session_path>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    mr_iid = sys.argv[1]
+    state_path = sys.argv[2]
+    session_path = sys.argv[3]
+    session = load_session(session_path)
+    include_own = bool(session.get("include_own_mr_notes"))
+
+    last_id = 0
+    if os.path.isfile(state_path):
+        with open(state_path, encoding="utf-8") as f:
+            last_id = int(json.load(f).get("last_note_id", 0))
+
+    notes_raw = run(
+        [
+            "glab",
+            "api",
+            f"projects/:id/merge_requests/{mr_iid}/notes?per_page=100&sort=asc&order_by=created_at",
+        ]
+    )
+    notes = json.loads(notes_raw)
+
+    note_to_discussion: dict[int, str] = {}
+    try:
+        disc_raw = run(
+            [
+                "glab",
+                "api",
+                f"projects/:id/merge_requests/{mr_iid}/discussions?per_page=100",
+            ]
+        )
+        for disc in json.loads(disc_raw):
+            disc_id = disc.get("id")
+            if not disc_id:
+                continue
+            for disc_note in disc.get("notes") or []:
+                note_to_discussion[int(disc_note["id"])] = disc_id
+    except SystemExit:
+        pass
+
+    me = glab_user()
+
+    new_notes = []
+    max_id = last_id
+    for note in notes:
+        nid = int(note["id"])
+        max_id = max(max_id, nid)
+        if nid <= last_id:
+            continue
+        if note.get("system"):
+            continue
+        body = (note.get("body") or "").strip()
+        if not body:
+            continue
+        if is_our_upload(body):
+            continue
+        author = note.get("author") or {}
+        if me and author.get("username") == me and not include_own:
+            continue
+        entry = {
+            "id": nid,
+            "author": author.get("username") or author.get("name") or "unknown",
+            "body": body,
+            "created_at": note.get("created_at"),
+        }
+        discussion_id = note_to_discussion.get(nid)
+        if discussion_id:
+            entry["discussion_id"] = discussion_id
+        new_notes.append(entry)
+
+    if new_notes or max_id > last_id:
+        state = {}
+        if os.path.isfile(state_path):
+            with open(state_path, encoding="utf-8") as f:
+                state = json.load(f)
+        state["last_note_id"] = max_id
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+            f.write("\n")
+
+    json.dump(new_notes, sys.stdout)
+
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+# FILE: shipfeat/scripts/init_session.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/init_session.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Write .shipfeat/session.json for MR watcher + agent resume context.
+set -euo pipefail
+
+if (( $# < 3 )); then
+  echo "Usage: init_session.sh <branch> <agent> <worktree-path> [tmux-agent-target]" >&2
+  exit 1
+fi
+
+branch="$1"
+agent="$2"
+worktree="$(cd "$3" && pwd)"
+tmux_target="${4:-}"
+poll_interval="${SHIPFEAT_MR_POLL_SEC:-45}"
+
+mkdir -p "${worktree}/.shipfeat"
+
+python3 - "$worktree/.shipfeat/session.json" "$branch" "$agent" "$worktree" "$poll_interval" "$tmux_target" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+out, branch, agent, worktree, poll, tmux_target = sys.argv[1:7]
+cursor_agents = {"agent", "cursor"}
+dispatch_mode = "cursor" if agent in cursor_agents else "tmux"
+include_own = agent in cursor_agents
+
+payload = {
+    "branch": branch,
+    "agent": agent,
+    "worktree": worktree,
+    "tmux_agent_target": tmux_target or None,
+    "dispatch_mode": dispatch_mode,
+    "include_own_mr_notes": include_own,
+    "mr_iid": None,
+    "mr_url": None,
+    "poll_interval_sec": int(poll),
+    "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+}
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+PY
+
+echo "session: ${worktree}/.shipfeat/session.json"
+echo "session: dispatch_mode=$(python3 -c 'import json; print(json.load(open("'"${worktree}/.shipfeat/session.json"'"))["dispatch_mode"])')"
+[[ -n "$tmux_target" ]] && echo "session: agent tmux target=${tmux_target}"
+
+################################################################################
+# FILE: shipfeat/scripts/install_cursor_hooks.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/install_cursor_hooks.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Install shipfeat Cursor hooks + MR comment rule into the feature worktree (.cursor/ is gitignored).
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+shipfeat_home="$(cd "$(dirname "$0")/.." && pwd)"
+hooks_src="${shipfeat_home}/hooks"
+rules_src="${shipfeat_home}/templates"
+
+mkdir -p "${repo_root}/.cursor/hooks" "${repo_root}/.cursor/rules"
+
+# Copy real files (not symlinks) — Cursor loads project hooks from .cursor/hooks.json
+cp "${hooks_src}/hooks.json" "${repo_root}/.cursor/hooks.json"
+for script in shipfeat-mr-comment-stop.sh shipfeat-mr-comment-before-prompt.sh; do
+  cp "${hooks_src}/${script}" "${repo_root}/.cursor/hooks/${script}"
+  chmod +x "${repo_root}/.cursor/hooks/${script}"
+done
+cp "${rules_src}/shipfeat-mr-comments.mdc" "${repo_root}/.cursor/rules/shipfeat-mr-comments.mdc"
+
+echo "cursor hooks: ${repo_root}/.cursor/hooks.json"
+echo "cursor rule:  ${repo_root}/.cursor/rules/shipfeat-mr-comments.mdc"
+
+################################################################################
+# FILE: shipfeat/scripts/open_mr.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/open_mr.sh
+################################################################################
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+branch="$(git symbolic-ref --quiet --short HEAD)" || {
+  echo "open_mr: not on a branch" >&2
+  exit 1
+}
+
+target="${OPENMR_TARGET:-develop}"
+title="${OPENMR_TITLE:-$branch}"
+
+git push -u origin "$branch"
+
+if glab mr view "$branch" >/dev/null 2>&1; then
+  echo "MR already exists for ${branch}"
+else
+  glab mr create \
+    --source-branch "$branch" \
+    --target-branch "$target" \
+    --title "$title" \
+    --fill \
+    --yes
+fi
+
+record_script="$(dirname "$0")/record_mr_open.sh"
+if [[ -x "$record_script" ]]; then
+  "$record_script" || echo "open_mr: warning — could not update session.json" >&2
+fi
+
+glab mr view "$branch" --web
+
+################################################################################
+# FILE: shipfeat/scripts/playwright_shipfeat_init.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/playwright_shipfeat_init.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Open app URL and set 1920x1080 viewport for shipfeat screenshots.
+set -euo pipefail
+
+if (( $# < 1 )); then
+  echo "Usage: playwright_shipfeat_init.sh <app-url>" >&2
+  exit 1
+fi
+
+url="$1"
+
+if ! command -v playwright-cli >/dev/null 2>&1; then
+  echo "playwright_shipfeat_init: playwright-cli not on PATH" >&2
+  exit 1
+fi
+
+playwright-cli open "$url"
+playwright-cli resize 1920 1080
+
+echo "playwright: ${url} @ 1920x1080"
+
+################################################################################
+# FILE: shipfeat/scripts/record_mr_open.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/record_mr_open.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Update session.json after MR exists (call from open_mr.sh or Phase 5).
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+session="${repo_root}/.shipfeat/session.json"
+[[ -f "$session" ]] || {
+  echo "record_mr_open: no ${session} (run init_session first)" >&2
+  exit 1
+}
+
+branch="$(git symbolic-ref --quiet --short HEAD)"
+mr_json="$(glab api "projects/:id/merge_requests?source_branch=${branch}&state=opened" 2>/dev/null)" || true
+
+if [[ -z "$mr_json" || "$mr_json" == "[]" ]]; then
+  echo "record_mr_open: no open MR for ${branch}" >&2
+  exit 1
+fi
+
+python3 - "$session" "$mr_json" <<'PY'
+import json, sys
+
+path, raw = sys.argv[1], sys.argv[2]
+mrs = json.loads(raw)
+mr = mrs[0]
+with open(path, encoding="utf-8") as f:
+    session = json.load(f)
+session["mr_iid"] = mr["iid"]
+session["mr_url"] = mr["web_url"]
+session["mr_title"] = mr.get("title", "")
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(session, f, indent=2)
+    f.write("\n")
+print(f"record_mr_open: iid={mr['iid']} url={mr['web_url']}")
+PY
+
+seed_script="$(dirname "$0")/seed_mr_watch_state.sh"
+if [[ -x "$seed_script" ]]; then
+  "$seed_script" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mr_iid"])' "$session")"
+fi
+
+################################################################################
+# FILE: shipfeat/scripts/require_branch_pushed.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/require_branch_pushed.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Exit 0 only when the feature branch has no uncommitted work and is pushed to origin.
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+branch="$(git branch --show-current)"
+[[ -n "$branch" ]] || {
+  echo "require_branch_pushed: not on a branch" >&2
+  exit 1
+}
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "require_branch_pushed: uncommitted changes — commit and push before resolving MR threads or consuming the queue" >&2
+  git status -sb >&2 || true
+  exit 1
+fi
+
+git fetch origin "$branch" 2>/dev/null || true
+
+upstream="origin/${branch}"
+if git rev-parse --verify "$upstream" >/dev/null 2>&1; then
+  ahead="$(git rev-list --count "${upstream}..HEAD" 2>/dev/null || echo 0)"
+  if (( ahead > 0 )); then
+    echo "require_branch_pushed: ${ahead} commit(s) on ${branch} not pushed to origin — push before resolving MR threads or consuming the queue" >&2
+    git log --oneline "${upstream}..HEAD" >&2 || true
+    exit 1
+  fi
+else
+  echo "require_branch_pushed: no upstream origin/${branch} — push with: git push -u origin ${branch}" >&2
+  exit 1
+fi
+
+echo "require_branch_pushed: ok (${branch} matches origin, working tree clean)"
+
+################################################################################
+# FILE: shipfeat/scripts/require_mr_photos_uploaded.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/require_mr_photos_uploaded.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Exit 0 only if MR photos were uploaded for this worktree (shipfeat gate).
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+marker="${repo_root}/.shipfeat/mr-photos-uploaded.json"
+
+if [[ ! -f "$marker" ]]; then
+  echo "require_mr_photos_uploaded: missing ${marker}" >&2
+  echo "Run: SHIPFEAT_HOME=\${SHIPFEAT_HOME:-\$HOME/.config/wasteos/shipfeat} \\"
+  echo "  \"\${SHIPFEAT_HOME}/scripts/upload_mr_screenshots.sh\" \"\$(git branch --show-current)\" .shipfeat/screenshots" >&2
+  exit 1
+fi
+
+branch="$(git -C "$repo_root" branch --show-current)"
+marker_branch="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["branch"])' "$marker")"
+
+if [[ "$marker_branch" != "$branch" ]]; then
+  echo "require_mr_photos_uploaded: marker is for branch ${marker_branch}, current is ${branch}" >&2
+  exit 1
+fi
+
+echo "OK: MR photos uploaded for ${branch} ($(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["files"]))' "$marker") file(s))"
+
+################################################################################
+# FILE: shipfeat/scripts/resolve_mr_discussion.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/resolve_mr_discussion.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Reply on a GitLab MR discussion and resolve it — only after branch is pushed.
+set -euo pipefail
+
+usage() {
+  echo "Usage: resolve_mr_discussion.sh <mr_iid> <discussion_id> <reply-body-file>" >&2
+  echo "  Or:  resolve_mr_discussion.sh <mr_iid> <discussion_id> -m \"message\"" >&2
+  exit 1
+}
+
+(( $# >= 3 )) || usage
+
+mr_iid="$1"
+discussion_id="$2"
+shift 2
+
+if [[ "$1" == "-m" ]]; then
+  [[ -n "${2:-}" ]] || usage
+  body="$2"
+else
+  body_file="$1"
+  [[ -f "$body_file" ]] || {
+    echo "resolve_mr_discussion: missing ${body_file}" >&2
+    exit 1
+  }
+  body="$(<"$body_file")"
+fi
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+"${script_dir}/require_branch_pushed.sh" || {
+  echo "resolve_mr_discussion: blocked — push all commits before resolving" >&2
+  exit 1
+}
+
+glab api "projects/:id/merge_requests/${mr_iid}/discussions/${discussion_id}/notes" \
+  --method POST --raw-field "body=${body}"
+
+glab api "projects/:id/merge_requests/${mr_iid}/discussions/${discussion_id}" \
+  --method PUT --raw-field "resolved=true"
+
+echo "resolve_mr_discussion: replied and resolved ${discussion_id}"
+
+################################################################################
+# FILE: shipfeat/scripts/run-agent.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/run-agent.sh
+################################################################################
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# < 2 )); then
+  echo "Usage: run-agent.sh <codex|claude|agent|cursor> <worktree-path>" >&2
+  exit 1
+fi
+
+agent="$1"
+worktree="$2"
+prompt_file="${worktree}/.shipfeat/prompt.md"
+
+if [[ ! -f "$prompt_file" ]]; then
+  echo "run-agent: missing ${prompt_file}" >&2
+  exit 1
+fi
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+export SHIPFEAT_WORKTREE="$worktree"
+export SHIPFEAT_HOME="$(shipfeat_tooling_root)"
+export SHIPFEAT_TOOLING="$SHIPFEAT_HOME"
+
+cd "$worktree"
+
+trust_script="$(dirname "$0")/trust_worktree.sh"
+[[ -x "$trust_script" ]] && "$trust_script" "$worktree" || true
+
+prompt="$(<"$prompt_file")"
+
+case "$agent" in
+  codex)
+    exec codex "$prompt"
+    ;;
+  claude)
+    exec claude "$prompt"
+    ;;
+  agent | cursor)
+    if command -v agent >/dev/null 2>&1; then
+      exec agent "$prompt"
+    fi
+    exec cursor agent "$prompt"
+    ;;
+  *)
+    echo "run-agent: unknown agent '${agent}' (use codex, claude, or agent)" >&2
+    exit 1
+    ;;
+esac
+
+################################################################################
+# FILE: shipfeat/scripts/seed_mr_watch_state.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/seed_mr_watch_state.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Set last_note_id to current max so only future MR comments trigger dispatch.
+set -euo pipefail
+
+if (( $# != 1 )); then
+  echo "Usage: seed_mr_watch_state.sh <mr_iid>" >&2
+  exit 1
+fi
+
+mr_iid="$1"
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+state="${repo_root}/.shipfeat/mr-watch-state.json"
+
+notes_raw="$(glab api "projects/:id/merge_requests/${mr_iid}/notes?per_page=100&sort=asc&order_by=created_at")"
+
+python3 - "$state" "$notes_raw" <<'PY'
+import json, sys, os
+
+state_path, raw = sys.argv[1], sys.argv[2]
+notes = json.loads(raw)
+max_id = max((int(n["id"]) for n in notes), default=0)
+state = {}
+if os.path.isfile(state_path):
+    with open(state_path, encoding="utf-8") as f:
+        state = json.load(f)
+state["last_note_id"] = max_id
+state["seeded"] = True
+with open(state_path, "w", encoding="utf-8") as f:
+    json.dump(state, f, indent=2)
+    f.write("\n")
+print(f"seed_mr_watch_state: last_note_id={max_id}")
+PY
+
+################################################################################
+# FILE: shipfeat/scripts/trust_all_wasteos_worktrees.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/trust_all_wasteos_worktrees.sh
+################################################################################
+
+#!/usr/bin/env bash
+# One-shot: pre-trust every ~/code/wasteos* directory (existing worktrees).
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+trust="${script_dir}/trust_worktree.sh"
+[[ -x "$trust" ]] || { echo "missing ${trust}" >&2; exit 1; }
+
+shopt -s nullglob
+for dir in "${HOME}/code"/wasteos*; do
+  [[ -d "$dir" ]] || continue
+  echo "trust: ${dir}"
+  "$trust" "$dir"
+done
+
+echo "done."
+
+################################################################################
+# FILE: shipfeat/scripts/trust_worktree.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/trust_worktree.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Pre-trust a WasteOS worktree for Codex, Cursor agent, and Claude Code (no trust popup).
+set -euo pipefail
+
+if (( $# != 1 )); then
+  echo "Usage: trust_worktree.sh <worktree-path>" >&2
+  exit 1
+fi
+
+worktree="$(cd "$1" && pwd)"
+
+_shipfeat_cursor_project_slug() {
+  local path="$1"
+  path="${path#/}"
+  printf '%s' "${path//\//-}"
+}
+
+_shipfeat_cursor_trust() {
+  local slug
+  slug="$(_shipfeat_cursor_project_slug "$worktree")"
+  local dir="${HOME}/.cursor/projects/${slug}"
+  mkdir -p "$dir"
+  python3 - "$worktree" "$dir/.workspace-trusted" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+worktree, out = sys.argv[1], sys.argv[2]
+payload = {
+    "trustedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+    "workspacePath": worktree,
+}
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(payload, f)
+    f.write("\n")
+PY
+}
+
+_shipfeat_codex_trust() {
+  local path="$1"
+  local config="${HOME}/.codex/config.toml"
+  [[ -f "$config" ]] || return 0
+  if grep -Fq "[projects.\"${path}\"]" "$config"; then
+    return 0
+  fi
+  cat >>"$config" <<EOF
+
+[projects."${path}"]
+trust_level = "trusted"
+EOF
+}
+
+_shipfeat_claude_trust() {
+  local path="$1"
+  local config="${HOME}/.claude.json"
+  [[ -f "$config" ]] || return 0
+  python3 - "$path" "$config" <<'PY'
+import json, sys
+
+path, config_path = sys.argv[1], sys.argv[2]
+with open(config_path, encoding="utf-8") as f:
+    data = json.load(f)
+projects = data.setdefault("projects", {})
+entry = projects.setdefault(path, {})
+entry["hasTrustDialogAccepted"] = True
+with open(config_path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+}
+
+_shipfeat_cursor_trust
+_shipfeat_codex_trust "$worktree"
+_shipfeat_codex_trust "${HOME}/code"
+_shipfeat_claude_trust "$worktree"
+
+################################################################################
+# FILE: shipfeat/scripts/upload_mr_screenshots.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/upload_mr_screenshots.sh
+################################################################################
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: upload_mr_screenshots.sh <branch> <file-or-dir> [note-title]" >&2
+  exit 1
+}
+
+(( $# >= 2 )) || usage
+
+branch="$1"
+target="$2"
+note_title="${3:-UI verification screenshots}"
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+if [[ "$target" != /* ]]; then
+  target="${repo_root}/${target}"
+fi
+
+shopt -s nullglob
+images=()
+
+if [[ -f "$target" ]]; then
+  case "$target" in
+    *.png | *.jpg | *.jpeg | *.webp) images=("$target") ;;
+    *)
+      echo "upload_mr_screenshots: not an image: ${target}" >&2
+      exit 1
+      ;;
+  esac
+elif [[ -d "$target" ]]; then
+  images=("$target"/*.{png,jpg,jpeg,webp})
+else
+  echo "upload_mr_screenshots: not found: ${target}" >&2
+  exit 1
+fi
+
+if (( ${#images[@]} == 0 )); then
+  echo "upload_mr_screenshots: no images in ${target}" >&2
+  exit 1
+fi
+
+project_id="$(glab api projects/:fullpath | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+
+note_body="## ${note_title}"$'\n\n'"Posted via \`wasteos-mr-upload-photos\` / shipfeat."$'\n\n'
+
+uploaded_names=()
+for image in "${images[@]}"; do
+  name="$(basename "$image")"
+  echo "Uploading ${name}..."
+  markdown="$(python3 - "$project_id" "$image" <<'PY'
+import json
+import sys
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+project_id, image_path = sys.argv[1], Path(sys.argv[2])
+config = yaml.safe_load(
+    open(Path.home() / "Library/Application Support/glab-cli/config.yml")
+)
+token = config["hosts"]["gitlab.com"]["token"]
+boundary = "----shipfeatUploadBoundary"
+body_start = (
+    f"--{boundary}\r\n"
+    f'Content-Disposition: form-data; name="file"; filename="{image_path.name}"\r\n'
+    f"Content-Type: image/png\r\n\r\n"
+).encode()
+body_end = f"\r\n--{boundary}--\r\n".encode()
+body = body_start + image_path.read_bytes() + body_end
+req = urllib.request.Request(
+    f"https://gitlab.com/api/v4/projects/{project_id}/uploads",
+    data=body,
+    method="POST",
+    headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    },
+)
+with urllib.request.urlopen(req) as resp:
+    print(json.load(resp)["markdown"])
+PY
+)"
+  note_body+="${markdown}"$'\n\n'
+  uploaded_names+=("$name")
+done
+
+glab mr note "$branch" -m "$(printf '%b' "$note_body")"
+
+marker_dir="${repo_root}/.shipfeat"
+mkdir -p "$marker_dir"
+python3 - "$marker_dir/mr-photos-uploaded.json" "$branch" "${uploaded_names[@]}" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+
+out, branch, *files = sys.argv[1], sys.argv[2], sys.argv[3:]
+payload = {
+    "branch": branch,
+    "uploaded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+    "files": files,
+}
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+PY
+
+echo "Attached ${#images[@]} image(s) to MR for branch ${branch}."
+echo "Marker: ${marker_dir}/mr-photos-uploaded.json"
+
+################################################################################
+# FILE: shipfeat/scripts/wait_for_backend_ready.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/wait_for_backend_ready.sh
+################################################################################
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+set -a
+# shellcheck disable=SC1091
+source .worktree.env
+set +a
+
+backend_port="${BACKEND_PORT:-}"
+if [[ -z "$backend_port" ]]; then
+  echo "wait_for_backend_ready: BACKEND_PORT not set in .worktree.env" >&2
+  exit 1
+fi
+
+# Django mounts readiness at api/common/readyz/ (see common.urls + wasteos.urls).
+# /readyz/ at the host root is not routed and returns 404.
+url="http://127.0.0.1:${backend_port}/api/common/readyz/"
+max_attempts=120
+sleep_seconds=5
+
+echo "Waiting for ${url} (max $((max_attempts * sleep_seconds))s)..."
+
+for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+  body="$(curl -sf "$url" 2>/dev/null || true)"
+  if [[ "$body" == '"READY"' || "$body" == "READY" ]]; then
+    echo "Backend ready after ${attempt} attempt(s)."
+    exit 0
+  fi
+  sleep "$sleep_seconds"
+done
+
+echo "wait_for_backend_ready: timed out (expected HTTP 200 body READY from ${url})" >&2
+exit 1
+
+################################################################################
+# FILE: shipfeat/scripts/watch_mr_comments.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/scripts/watch_mr_comments.sh
+################################################################################
+
+#!/usr/bin/env bash
+# Poll GitLab MR notes and dispatch agent when new human comments arrive.
+set -euo pipefail
+
+# shellcheck source=_worktree_root.sh
+source "$(dirname "$0")/_worktree_root.sh"
+
+repo_root="$(shipfeat_worktree_root)"
+cd "$repo_root"
+
+session="${repo_root}/.shipfeat/session.json"
+state="${repo_root}/.shipfeat/mr-watch-state.json"
+stop_file="${repo_root}/.shipfeat/stop-mr-watch"
+log="${repo_root}/.shipfeat/mr-watch.log"
+
+if [[ ! -f "$session" ]]; then
+  echo "watch_mr_comments: waiting for ${session}..." >&2
+  while [[ ! -f "$session" ]]; do
+    sleep 5
+  done
+fi
+
+poll_sec="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("poll_interval_sec", 45))' "$session")"
+branch="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["branch"])' "$session")"
+
+echo "shipfeat MR watch: branch=${branch} poll=${poll_sec}s (Ctrl+C or touch .shipfeat/stop-mr-watch)" | tee -a "$log"
+
+while true; do
+  if [[ -f "$stop_file" ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) stop file present — exiting" | tee -a "$log"
+    exit 0
+  fi
+
+  if [[ ! -f "$session" ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) session.json removed — exiting" | tee -a "$log"
+    exit 0
+  fi
+
+  mr_iid="$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1])).get("mr_iid"); print(v if v else "")' "$session")"
+
+  if [[ -z "$mr_iid" ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) waiting for MR (run open_mr / Phase 5)..." >>"$log"
+    sleep "$poll_sec"
+    continue
+  fi
+
+  mr_state="$(glab api "projects/:id/merge_requests/${mr_iid}" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || echo "")"
+  if [[ "$mr_state" == "merged" || "$mr_state" == "closed" ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) MR ${mr_state} — watcher stopping" | tee -a "$log"
+    exit 0
+  fi
+
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  new_json="$("${script_dir}/fetch_new_mr_notes.py" "$mr_iid" "$state" "$session")"
+
+  count="$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$new_json")"
+  if (( count > 0 )); then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${count} new MR note(s)" | tee -a "$log"
+    tmp="${repo_root}/.shipfeat/.mr-comment-batch.md"
+    python3 - "$tmp" "$new_json" <<'PY'
+import json, sys
+
+out, notes = sys.argv[1], json.loads(sys.argv[2])
+parts = []
+for n in notes:
+    header = f"### @{n['author']} (note {n['id']}"
+    if n.get("discussion_id"):
+        header += f", discussion {n['discussion_id']}"
+    header += ")\n\n"
+    parts.append(f"{header}{n['body']}\n")
+with open(out, "w", encoding="utf-8") as f:
+    f.write("\n".join(parts))
+PY
+    "${script_dir}/dispatch_mr_comment.sh" "$tmp"
+  fi
+
+  sleep "$poll_sec"
+done
+
+================================================================================
+PART 5 — CURSOR HOOKS + TEMPLATES
+================================================================================
+
+################################################################################
+# FILE: hooks/hooks.json
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/hooks/hooks.json
+################################################################################
+
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/shipfeat-mr-comment-before-prompt.sh",
+        "matcher": "UserPromptSubmit"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/shipfeat-mr-comment-stop.sh",
+        "loop_limit": null
+      }
+    ]
+  }
+}
+
+################################################################################
+# FILE: hooks/shipfeat-mr-comment-before-prompt.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/hooks/shipfeat-mr-comment-before-prompt.sh
+################################################################################
+
+#!/usr/bin/env bash
+# When MR feedback is queued, inject instructions into every user prompt turn.
+set -euo pipefail
+
+ready_file=".shipfeat/mr-comment-ready.json"
+pending_file=".shipfeat/pending-mr-comment-prompt.md"
+
+if [[ ! -f "$ready_file" ]] || [[ ! -f "$pending_file" ]]; then
+  echo '{}'
+  exit 0
+fi
+
+cat <<'EOF'
+{
+  "continue": true,
+  "agent_message": "SHIPFEAT MR COMMENT QUEUED: Read `.shipfeat/pending-mr-comment-prompt.md` first. Any tracked change needs commit+push; run require_branch_pushed.sh before resolve_mr_discussion.sh. Then consume_mr_comment_prompt.sh."
+}
+EOF
+
+################################################################################
+# FILE: hooks/shipfeat-mr-comment-stop.sh
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/hooks/shipfeat-mr-comment-stop.sh
+################################################################################
+
+#!/usr/bin/env bash
+# When shipfeat MR watcher queues feedback, auto-continue the agent loop.
+set -euo pipefail
+
+ready_file=".shipfeat/mr-comment-ready.json"
+pending_file=".shipfeat/pending-mr-comment-prompt.md"
+
+if [[ ! -f "$ready_file" ]] || [[ ! -f "$pending_file" ]]; then
+  echo '{}'
+  exit 0
+fi
+
+# Do not delete ready here — consume_mr_comment_prompt.sh clears it after work is done.
+# That way the Cursor rule + beforeSubmitPrompt hook keep nudging until consumed.
+
+python3 <<'PY'
+import json
+
+msg = (
+    "SHIPFEAT MR COMMENT QUEUED.\n\n"
+    "Read `.shipfeat/pending-mr-comment-prompt.md` now and execute every item per "
+    "`wasteos-mr-comment-watch` — commit, push, require_branch_pushed.sh, then "
+    "resolve_mr_discussion.sh (never resolve before push). When finished: "
+    "require_branch_pushed.sh && consume_mr_comment_prompt.sh."
+)
+print(json.dumps({"followup_message": msg}))
+PY
+
+################################################################################
+# FILE: templates/mr-comment-response-instructions.md
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/templates/mr-comment-response-instructions.md
+################################################################################
+
+# MR review comment — required agent behaviour
+
+You were dispatched because a **new human GitLab MR comment** arrived on this branch. Read every comment in the batch below (and any inline context on GitLab).
+
+Follow `~/.config/wasteos/code-review-standard.md` for all code changes.
+
+## Hard rules
+
+### 1. When the feedback requires any change on the branch
+
+This includes **code, UI, deleting files, or any tracked git change** (even under `.shipfeat/`).
+
+You **must** complete **all** of these **in order** before you stop:
+
+1. **Implement** the change.
+2. **Run tests** when you touched backend or risky areas — `docker exec ${COMPOSE_PROJECT_NAME}-backend-1 pytest …` from `.worktree.env`.
+3. **Commit** on the feature branch.
+4. **Push** to origin and verify:
+
+   ```bash
+   git push origin "$(git branch --show-current)"
+   "${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/require_branch_pushed.sh"
+   ```
+
+   **`require_branch_pushed.sh` must exit 0** before you reply or resolve on GitLab.
+
+5. **UI feedback** — capture Playwright screenshots and upload:
+
+   ```bash
+   "${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/upload_mr_screenshots.sh" \
+     "$(git branch --show-current)" \
+     .shipfeat/screenshots \
+     "Addressing MR feedback — $(git branch --show-current)"
+   ```
+
+6. **Reply on GitLab** in the **same discussion thread** (what changed + commit SHA on origin). For **visible UI changes** (tables, columns, labels, layout), upload a screenshot and **link it in that thread reply** — not only a top-level MR note.
+
+7. **Resolve the thread** only after steps 4–6 succeeded — use the helper (do not call resolve APIs by hand):
+
+   ```bash
+   "${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/resolve_mr_discussion.sh" \
+     <mr_iid> <discussion_id> -m "Fixed in <sha>: …"
+   ```
+
+   `resolve_mr_discussion.sh` runs `require_branch_pushed.sh` first and **will refuse** to resolve if anything is unpushed.
+
+### 2. When you cannot or should not change the branch
+
+Examples: requirement is ambiguous, needs product decision, or a question you cannot answer from the repo.
+
+You **must**:
+
+1. **Reply on GitLab** with a **clear question** (or what is blocking).
+2. **Leave the discussion unresolved** — do **not** call `resolved=true`.
+3. **Do not push** an empty or no-op commit.
+
+### 3. Never do this
+
+- Delete, edit, or add **tracked** files locally without **commit + push**.
+- Resolve a thread before `require_branch_pushed.sh` passes.
+- Resolve without a GitLab reply.
+- Resolve when you only asked a question and shipped no change.
+- Run `consume_mr_comment_prompt.sh` while the branch is ahead of origin or dirty.
+- Skip UI screenshots for visual feedback.
+
+## Clear the queue
+
+Only after every comment in the batch is handled **and** the branch is pushed:
+
+```bash
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/require_branch_pushed.sh"
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/consume_mr_comment_prompt.sh"
+```
+
+`consume_mr_comment_prompt.sh` also runs `require_branch_pushed.sh` and **will exit 1** if you skipped the push.
+
+## Completion checklist
+
+```text
+[ ] Read every comment in this batch
+[ ] Chosen path: branch change OR clarifying question only
+[ ] If branch change: committed
+[ ] If branch change: pushed — require_branch_pushed.sh passed
+[ ] If UI: screenshots uploaded to MR
+[ ] GitLab: reply on each thread
+[ ] GitLab: resolve only via resolve_mr_discussion.sh (after push)
+[ ] consume_mr_comment_prompt.sh succeeded
+```
+
+################################################################################
+# FILE: templates/shipfeat-mr-comments.mdc
+# PATH: /Users/samrichards/.config/wasteos/shipfeat/templates/shipfeat-mr-comments.mdc
+################################################################################
+
+---
+description: Shipfeat MR comment queue — consume pending GitLab review feedback first
+alwaysApply: true
+---
+
+# Shipfeat MR comment queue
+
+If **`.shipfeat/mr-comment-ready.json`** exists in this worktree:
+
+1. **Before any other work**, read **`.shipfeat/pending-mr-comment-prompt.md`**.
+2. Follow **`wasteos-mr-comment-watch`** — any **tracked** change (including file deletes) needs **commit + push** before GitLab resolve.
+3. Before resolve: `require_branch_pushed.sh` must pass. Resolve only via `resolve_mr_discussion.sh`.
+4. When the batch is fully handled:
+
+```bash
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/require_branch_pushed.sh"
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/consume_mr_comment_prompt.sh"
+```
+
+Do not ignore the queue. Do not mark review work complete without running the consume script.
+
+================================================================================
+PART 6 — COMPANION SKILLS (MR photos + MR comment watch)
+================================================================================
+
+################################################################################
+# FILE: skills/wasteos-mr-upload-photos/SKILL.md
+# PATH: /Users/samrichards/.config/wasteos/skills/wasteos-mr-upload-photos/SKILL.md
+################################################################################
+
+---
+name: wasteos-mr-upload-photos
+description: Upload PNG/JPEG/WebP screenshots to a GitLab merge request as an MR note (comment) with inline images. Use after UI work, shipfeat Phase 6, or whenever the user asks to attach photos to an MR.
+---
+
+# Upload photos to a GitLab MR note
+
+Agents **must** use this skill whenever UI screenshots belong on an MR. Do not paste image paths in chat only — upload them to GitLab with the script below.
+
+## When this is mandatory
+
+- Any feature that changed frontend UI (pages, modals, forms, tables).
+- End of `wasteos-ship-feat` Phase 6 (always, if Phase 6 ran).
+- User asks to "add screenshots", "attach photos", or "show UI on the MR".
+
+Backend-only changes with no UI still skip screenshots, but if you captured any UI for verification, upload them anyway.
+
+## Prerequisites
+
+- On the feature branch with an open MR (`glab mr view` works).
+- Run from the **feature worktree root** (directory containing `.worktree.env`).
+- `glab` authenticated for the project.
+- Images saved locally (`.shipfeat/screenshots/` during shipfeat).
+
+## Upload (required command)
+
+```bash
+export SHIPFEAT_HOME="${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}"
+branch="$(git branch --show-current)"
+
+"${SHIPFEAT_HOME}/scripts/upload_mr_screenshots.sh" "$branch" .shipfeat/screenshots
+```
+
+Single file:
+
+```bash
+"${SHIPFEAT_HOME}/scripts/upload_mr_screenshots.sh" "$branch" .shipfeat/screenshots/billing-list.png
+```
+
+Custom note title (optional third argument):
+
+```bash
+"${SHIPFEAT_HOME}/scripts/upload_mr_screenshots.sh" "$branch" .shipfeat/screenshots "UI verification — billing batch"
+```
+
+The script:
+
+1. POSTs each image via GitLab `projects/:id/uploads`.
+2. Builds one MR note with inline `![...](uploads/...)` markdown.
+3. Posts the note with `glab mr note`.
+4. Writes `.shipfeat/mr-photos-uploaded.json` (proof of upload).
+
+**Do not** hand-roll `glab api` upload calls unless this script cannot run — prefer fixing the script.
+
+## Verify before claiming done
+
+```bash
+test -f .shipfeat/mr-photos-uploaded.json && echo "MR photos uploaded"
+glab mr view "$(git branch --show-current)" --comments | head -20
+```
+
+If upload failed, fix and re-run. **Do not** mark shipfeat or the task complete until `upload_mr_screenshots.sh` exits 0 and the marker file exists.
+
+## Screenshot capture (shipfeat / Playwright)
+
+Before upload, capture UI with **playwright-cli** (see `.agents/skills/playwright-cli/SKILL.md` in the worktree):
+
+```bash
+source ~/.config/wasteos/shipfeat.env 2>/dev/null || true
+app_url="$("${SHIPFEAT_HOME}/scripts/app_url.sh")"
+mkdir -p .shipfeat/screenshots
+"${SHIPFEAT_HOME}/scripts/playwright_shipfeat_init.sh" "$app_url"
+# login, navigate, screenshot each changed surface (viewport must stay 1920x1080), close
+```
+
+Save descriptive filenames: `invoice-batch-list.png`, `modal-create-error.png`.
+
+## Failure handling
+
+| Problem | Action |
+|---------|--------|
+| No MR for branch | Run `open_mr.sh` first, then re-upload |
+| Empty screenshot dir | Capture UI first; if truly no UI, document in `.shipfeat/summary.md` why |
+| `glab` auth error | Stop; tell user to fix `glab auth` |
+| Upload API error | Retry once; if still failing, stop and report |
+
+## Completion checklist
+
+```text
+[ ] At least one screenshot per changed UI surface (or documented N/A)
+[ ] upload_mr_screenshots.sh exited 0
+[ ] .shipfeat/mr-photos-uploaded.json exists
+[ ] MR note visible on GitLab with inline images
+```
+
+################################################################################
+# FILE: skills/wasteos-mr-comment-watch/SKILL.md
+# PATH: /Users/samrichards/.config/wasteos/skills/wasteos-mr-comment-watch/SKILL.md
+################################################################################
+
+---
+name: wasteos-mr-comment-watch
+description: Poll a GitLab MR for new human comments and dispatch the shipfeat agent (Cursor, Claude, Codex, or tmux) to address them — push before resolve, screenshots, GitLab replies. Started by shipfeat.
+---
+
+# MR comment watcher (shipfeat)
+
+`shipfeat` starts `watch_mr_comments.sh` in a tmux pane. It polls GitLab (~45s) for **new human MR notes**, writes the batch to `.shipfeat/pending-mr-comment-prompt.md`, and signals the **interactive agent** to consume it.
+
+**The watcher does not fix MR feedback itself.** The agent running in the feature worktree does.
+
+## Agent matrix
+
+| Agent | `session.json` `dispatch_mode` | How the queue is delivered | How the agent consumes |
+|-------|-------------------------------|----------------------------|-------------------------|
+| **`agent`** (Cursor CLI / Composer) | `cursor` | `mr-comment-ready.json` + Cursor hooks/rule | Read pending file; hooks nudge; `consume_mr_comment_prompt.sh` when done |
+| **`cursor`** | `cursor` | same as `agent` | same |
+| **`claude`** | `tmux` | `tmux send-keys` to agent pane | Read pending file when nudged; poll `mr-comment-ready.json` if needed |
+| **`codex`** | `tmux` | `tmux send-keys` to agent pane | same as `claude` |
+
+`init_session.sh` sets `dispatch_mode` automatically from the agent name.
+
+### Cursor (`agent` / `cursor`)
+
+`install_cursor_hooks.sh` (run by `shipfeat`) installs:
+
+1. `.cursor/rules/shipfeat-mr-comments.mdc` — while `mr-comment-ready.json` exists, read the pending prompt first.
+2. `beforeSubmitPrompt` hook — injects reminder on each user message.
+3. `stop` hook — `followup_message` to continue the loop.
+
+**Requires project hooks defined** — `install_cursor_hooks.sh` writes `.cursor/hooks.json` and scripts (Cursor runs them by default when present).
+
+### Claude / Codex (tmux pane)
+
+The watcher still writes the same files. Dispatch sends a one-line instruction to `tmux_agent_target` (shipfeat agent pane). The agent must:
+
+1. Open `.shipfeat/pending-mr-comment-prompt.md`.
+2. Follow this skill.
+3. Run `consume_mr_comment_prompt.sh` when finished.
+
+If you run Claude/Codex **outside** shipfeat tmux (e.g. Cursor Composer on the worktree), use **`cursor`** dispatch: set `"dispatch_mode": "cursor"` in `.shipfeat/session.json` and run `install_cursor_hooks.sh`.
+
+## Push before resolve (hard gate)
+
+**Never resolve a GitLab thread until the branch is pushed.**
+
+```bash
+git push origin "$(git branch --show-current)"
+"${SHIPFEAT_HOME:-$HOME/.config/wasteos/shipfeat}/scripts/require_branch_pushed.sh"
+```
+
+Any **tracked** change counts — including deleting `.shipfeat/plan.md` or other files on the branch. Local-only deletes without commit + push do **not** satisfy the MR.
+
+Resolve only through:
+
+```bash
+"${SHIPFEAT_HOME}/scripts/resolve_mr_discussion.sh" <mr_iid> <discussion_id> -m "…"
+```
+
+That script refuses to resolve if `require_branch_pushed.sh` fails.
+
+`consume_mr_comment_prompt.sh` also runs `require_branch_pushed.sh` before clearing the queue.
+
+## Required behaviour when dispatched
+
+Read `.shipfeat/pending-mr-comment-prompt.md` (full checklist in `~/.config/wasteos/shipfeat/templates/mr-comment-response-instructions.md`).
+
+### Path A — Any branch change (code, UI, file delete, config)
+
+1. Implement → test (if applicable) → **commit** → **push** → `require_branch_pushed.sh`
+2. UI: screenshots + `upload_mr_screenshots.sh`
+3. Reply on GitLab thread
+4. `resolve_mr_discussion.sh` (not raw `glab … resolved=true`)
+
+### Path B — No branch change / unclear
+
+1. Reply with a question on GitLab
+2. **Leave thread open** (no resolve, no empty push)
+
+### Forbidden
+
+- Resolve before push verified
+- Delete tracked files without commit + push
+- `consume_mr_comment_prompt.sh` while dirty or ahead of origin
+- Finish without GitLab reply
+
+## Files
+
+| Path | Purpose |
+|------|---------|
+| `.shipfeat/session.json` | `branch`, `agent`, `mr_iid`, `dispatch_mode`, `tmux_agent_target`, `include_own_mr_notes` |
+| `.shipfeat/pending-mr-comment-prompt.md` | Comment batch + instructions |
+| `.shipfeat/mr-comment-ready.json` | Queue signal (Cursor / manual poll) |
+| `.shipfeat/mr-watch-state.json` | `last_note_id` |
+| `.shipfeat/stop-mr-watch` | Stop watcher |
+
+Comment headers: `note <id>`, `discussion <id>` for `resolve_mr_discussion.sh`.
+
+## Scripts (`SHIPFEAT_HOME/scripts/`)
+
+| Script | Purpose |
+|--------|---------|
+| `watch_mr_comments.sh` | Poll GitLab, dispatch |
+| `require_branch_pushed.sh` | Gate: clean tree + no unpushed commits |
+| `resolve_mr_discussion.sh` | Reply + resolve (after push gate) |
+| `consume_mr_comment_prompt.sh` | Clear queue (after push gate) |
+| `install_cursor_hooks.sh` | Cursor hooks + rule (per worktree) |
+| `seed_mr_watch_state.sh` | Ignore existing MR notes |
+
+## Manual run
+
+```bash
+export SHIPFEAT_HOME=~/.config/wasteos/shipfeat
+cd /path/to/feature-worktree
+"${SHIPFEAT_HOME}/scripts/install_cursor_hooks.sh"   # Cursor only
+"${SHIPFEAT_HOME}/scripts/watch_mr_comments.sh"
+```
+
+## Related
+
+- `wasteos-ship-feat` — Phase 5b
+- `wasteos-mr-upload-photos` — screenshot upload
+
+================================================================================
+PART 7 — code-review-standard.md (full)
+================================================================================
+
+################################################################################
+# FILE: code-review-standard.md
+# PATH: /Users/samrichards/.config/wasteos/code-review-standard.md
+################################################################################
+
+# Agent Code Review Standard
+
+This document defines the review gate that must be applied before any agent-generated code is considered complete. The goal is not merely to make code pass tests, but to ensure the implementation is consistent with the existing repository architecture, naming conventions, domain modelling approach, API contracts, frontend conventions, and maintainability standards.
+
+Every code-producing agent must review its own changes against this document before presenting the result.
+
+## Core Principle
+
+Generated code should look as though it was written by a careful maintainer of this repository, not by an external tool trying to satisfy the immediate prompt.
+
+Code that technically works but introduces avoidable inconsistency, hard-coded behaviour, unclear naming, misplaced validation, unnecessary abstraction, duplicated domain knowledge, defensive noise, permission gaps, or architectural drift is incomplete.
+
+Prefer code that is explicit, boring, readable, domain-aligned, and consistent with nearby code.
+
+## 1. Imports Must Belong at the Top of the File
+
+Imports should always be placed at the top of the file unless there is an exceptional reason not to do so.
+
+Local imports inside functions, methods, serializers, services, views, or React components are a smell. They are sometimes used to dodge circular dependencies, but circular dependencies usually indicate that the module boundaries are wrong.
+
+Before accepting a local import, ask:
+
+```text
+Is this local import genuinely necessary, or is it hiding a circular dependency?
+Can the dependency direction be reversed?
+Should shared logic be moved into a lower-level module?
+Should this function live somewhere else?
+```
+
+A local import is only acceptable when there is a clear, concrete reason, such as avoiding an expensive optional dependency or preventing a genuine import-time side effect. It should not be used as a default fix for poor structure.
+
+## 2. API Views Must Stay Thin
+
+API views should not become orchestration layers.
+
+The normal shape of a backend endpoint should be:
+
+```text
+Authenticate / authorize at the boundary.
+Deserialize and validate request shape.
+Call one service-layer operation.
+Serialize the response.
+Return the response.
+```
+
+API views should not contain business workflows, multi-step ORM logic, branch-access logic, billing logic, state transitions, or large try/except blocks that merely catch and re-raise service exceptions.
+
+Avoid this pattern:
+
+```python
+class SomeApi(APIView):
+    def post(self, request):
+        # lots of ORM access
+        # business validation
+        # state transitions
+        # manual error mapping
+        # response construction
+```
+
+Prefer this pattern:
+
+```python
+class SomeApi(APIView):
+    def post(self, request):
+        serializer = SomeInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        result = some_service_function(
+            user=request.user,
+            **serializer.validated_data,
+        )
+
+        return Response(SomeOutputSerializer(result).data)
+```
+
+In this repository, avoid combining unrelated actions into the same API class or endpoint. A view should represent one clear API operation. Do not combine list/create, update/delete, preview/generate, or unrelated actions merely because they touch the same model.
+
+The review question is:
+
+```text
+Is this API view only adapting HTTP to the application/service layer?
+```
+
+If not, move the logic down.
+
+## 3. Serializers Shape Contracts; Services Own Business Logic
+
+Serializers should mainly validate and shape the API contract. They should answer questions such as:
+
+```text
+Is this field present?
+Is this field the right primitive type?
+Is this choice one of the model-defined valid choices?
+Is this nested payload structurally valid?
+Can this payload be safely passed into the application layer?
+```
+
+Serializers should not be the primary home for business rules.
+
+Business validation belongs in the service layer. Services should answer questions such as:
+
+```text
+Is this state transition allowed?
+Can this job be completed in its current state?
+Is this account allowed to use this payment method?
+Does this operation violate branch access?
+Does this operation violate billing, invoicing, or operational rules?
+```
+
+The service layer should protect the application even if called from somewhere other than the API endpoint.
+
+If a serializer starts computing business outcomes, running multi-step queries, checking permissions, or orchestrating writes, it is no longer really a serializer.
+
+## 4. Services Own Writes, Authorization, and Workflows
+
+All meaningful writes should go through service-layer functions.
+
+Services should own:
+
+```text
+Create/update/delete workflows.
+Permission and branch-access checks.
+State transitions.
+Cross-model validation.
+Multi-step operations.
+Billing, invoicing, payment, and job lifecycle rules.
+Transaction boundaries.
+```
+
+A service function should expose a clear application operation, not a vague data manipulation helper.
+
+Prefer:
+
+```python
+complete_bridge_ticket(...)
+void_invoice(...)
+create_recurring_charge(...)
+generate_invoice_batch(...)
+apply_customer_payment(...)
+```
+
+Avoid:
+
+```python
+process_data(...)
+handle_update(...)
+resolve(...)
+do_action(...)
+```
+
+## 5. Validation Should Happen Once at the Agreed Boundary
+
+Do not scatter defensive validation throughout the call chain.
+
+Validate API shape at the serializer boundary. Validate business rules at the service boundary. Enforce unrepresentable states at the model/database boundary.
+
+Avoid peppering code with repeated guards such as:
+
+```python
+if value is None:
+    return default
+
+if not hasattr(obj, "field"):
+    return None
+
+if maybe_list:
+    ...
+```
+
+These often hide bad assumptions, weak contracts, or invalid states that should have been prevented earlier.
+
+The review question is:
+
+```text
+Is this check enforcing a real boundary, or is it defensive noise compensating for uncertainty?
+```
+
+If the value should always exist, enforce that at creation time. If the state should be impossible, enforce it with a model constraint. If the caller violated the contract, raise loudly rather than silently continuing.
+
+## 6. Prefer Model Invariants Over `clean()` Spaghetti
+
+When a business rule describes an invalid state that should never exist, prefer a model/database constraint over scattered runtime checks.
+
+Ask:
+
+```text
+Should this state be representable at all?
+```
+
+If the answer is no, use one of:
+
+```text
+CheckConstraint
+UniqueConstraint
+null=False
+blank=False
+model field validators
+explicit model-level invariant
+```
+
+Do not rely on service conditionals, serializer validation, or `clean()` methods alone when the database can make the invalid state impossible.
+
+`clean()` should remain thin. It should not become a large second service layer.
+
+For cross-field invariants, consider whether a `CheckConstraint` can express the rule. For parent/child invariants, avoid child models poking at parent internals with `hasattr`. Add an explicit method on the parent instead.
+
+Avoid:
+
+```python
+if hasattr(parent, "service_type"):
+    ...
+```
+
+Prefer:
+
+```python
+parent.validate_primitive_code(code)
+```
+
+## 7. Do Not Hard-Code TextChoices Values
+
+When a model field is backed by a Django `TextChoices` class, serializers and services must use the model-defined choices rather than hard-coded string lists.
+
+Correct serializer pattern:
+
+```python
+class SomeSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=SomeModel.Status.choices)
+```
+
+Incorrect pattern:
+
+```python
+class SomeSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["draft", "active", "cancelled"])
+```
+
+Hard-coded lists duplicate domain knowledge, drift from the model over time, and make refactors fragile.
+
+## 8. Services Should Use TextChoices Constants and `.values`
+
+Service-layer code should not compare against magic strings when a model `TextChoices` class exists.
+
+Correct pattern:
+
+```python
+if status == SomeModel.Status.ACTIVE:
+    ...
+```
+
+For membership checks, use `.values` where applicable.
+
+Correct pattern:
+
+```python
+if status not in SomeModel.Status.values:
+    raise ValidationError("Invalid status.")
+```
+
+Incorrect pattern:
+
+```python
+if status not in ["draft", "active", "cancelled"]:
+    raise ValidationError("Invalid status.")
+```
+
+The model should remain the canonical source of valid symbolic values.
+
+## 9. Keep Static Choices and Dynamic Configurable Choices Distinct
+
+Do not blur the distinction between static backend-controlled choices and database-configurable choices.
+
+Use `TextChoices` when the value controls backend behaviour, branching logic, state machines, permissions, billing semantics, or domain invariants.
+
+Use a configurable choice model when the value is user-administered business configuration, usually for dropdowns, display, categorisation, filtering, or branch/customer-specific configuration.
+
+Do not replace a `ForeignKey` to a configurable choice model with a raw integer or string field. Do not replace a behavioural `TextChoices` field with a database-backed choice merely because it appears as a dropdown in the UI.
+
+The review question is:
+
+```text
+Is this value part of the software’s domain logic, or is it user-configurable business data?
+```
+
+## 10. Avoid Magic Strings, Magic Numbers, and Duplicated Domain Constants
+
+Do not introduce raw string literals or numeric constants for values that already exist as model fields, choices, settings, constants, enums, or domain-level definitions.
+
+Incorrect pattern:
+
+```python
+if invoice_level == "site":
+    ...
+```
+
+Correct pattern:
+
+```python
+if invoice_level == Account.InvoiceLevel.SITE:
+    ...
+```
+
+Hard-coded literals are especially dangerous in state, status, payment, invoice, job, route, material, branch, permission, service, and pricing logic.
+
+The review question is:
+
+```text
+Is this literal value already represented somewhere canonical?
+```
+
+If yes, use the canonical representation.
+
+## 11. Frontend Must Not Hard-Code Backend-Owned Enums
+
+The frontend should not hard-code option lists, enum values, labels, or backend-owned status mappings when the backend owns those values.
+
+Avoid:
+
+```tsx
+const STATUS_OPTIONS = [
+    { value: 'draft', label: 'Draft' },
+    { value: 'active', label: 'Active' },
+];
+```
+
+Prefer consuming options from the API, generated schema, or a shared contract.
+
+If the backend owns the domain, the frontend should consume the contract. It should not independently recreate the domain.
+
+The review question is:
+
+```text
+Will this frontend value drift if the backend choices change?
+```
+
+If yes, remove the hard-coding.
+
+## 12. Use Explicit Nested Serializers for Structured Data
+
+Do not use loose `ListField(DictField())` or undocumented dictionary shapes for structured API responses unless the shape is genuinely arbitrary.
+
+Avoid:
+
+```python
+sample_recipients = serializers.ListField(
+    child=serializers.DictField()
+)
+```
+
+Prefer:
+
+```python
+class SampleRecipientSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    name = serializers.CharField()
+    status = serializers.ChoiceField(choices=RecipientStatus.choices)
+
+class BulkEmailPreviewSerializer(serializers.Serializer):
+    sample_recipients = SampleRecipientSerializer(many=True)
+```
+
+Structured API responses should be explicit, typed, documented, and reflected in the OpenAPI schema.
+
+After API contract changes, regenerate or check the OpenAPI artifact.
+
+## 13. Branch Access and Permissions Must Be Checked in Services
+
+Every create, update, delete, generation, posting, voiding, billing, bridge, pricing, payment, and job operation on branch-owned records must check branch access in the service layer.
+
+Do not rely only on frontend route guards, API permission classes, or queryset filtering.
+
+Service-layer checks should happen before writes and before expensive queries where possible.
+
+The review question is:
+
+```text
+Can this user perform this operation on this branch-owned resource?
+```
+
+For write paths, the pattern should be explicit:
+
+```python
+if branch_id not in user.branch_ids:
+    raise PermissionDenied(...)
+```
+
+or the repository’s equivalent branch-access helper.
+
+Separate these two concepts:
+
+```text
+Does the resource state allow this action?
+Is the current user permitted to perform this action?
+```
+
+Both must be true.
+
+## 14. Backend Should Derive Permission-Aware UI Affordances
+
+Frontend affordances such as `can_void`, `can_take_payment`, `can_edit`, `can_delete`, `can_invoice`, and `can_complete` should be derived by the backend when they depend on domain state plus user permissions.
+
+The frontend should not infer permission-sensitive actions using partial local state.
+
+Avoid:
+
+```tsx
+const canVoid = ticket.status === 'completed';
+```
+
+Prefer receiving:
+
+```tsx
+ticket.can_void;
+```
+
+from a backend serializer that knows both the ticket state and the current user’s permissions.
+
+The frontend may still hide or disable controls, but the backend must remain authoritative.
+
+## 15. Permissions Should Distinguish Loading, Denied, and Missing Data
+
+Permission-gated frontend routes must distinguish:
+
+```text
+Permissions are still loading.
+Permissions loaded and access is denied.
+The requested resource does not exist.
+The user is allowed but the data request failed.
+```
+
+Do not redirect authorized users merely because permission data is temporarily stale or loading.
+
+## 16. Services Should Express Domain Logic, Not API Formatting
+
+Services should not return large API-shaped dictionaries unless that is clearly the established local pattern and genuinely appropriate.
+
+As a default, services should perform domain operations and return domain objects, querysets, dataclasses, simple result objects, or explicitly named DTOs. Serializers should own response formatting and API representation.
+
+The review question is:
+
+```text
+Is this formatting logic here because it belongs to the domain, or because the API response happens to need this shape?
+```
+
+If the answer is “because the frontend/API needs this shape,” the logic probably belongs in a serializer or presentation layer.
+
+## 17. One Concept Should Have One Owner
+
+Do not re-encode the same domain mapping in multiple places.
+
+Before writing a helper that maps one domain concept to another, search for an existing canonical function.
+
+Examples of mappings that should not be duplicated:
+
+```text
+charge scope → account/site/job
+job line type → billing primitive
+ticket → invoiceability
+branch-owned object → branch access check
+payment method → payment behaviour
+invoice level → grouping behaviour
+```
+
+If a concept already has a resolver, use it. If the resolver is in the wrong place, move it to the owning module rather than creating a second idiom.
+
+The review question is:
+
+```text
+If this domain rule changes, how many files would need to be edited?
+```
+
+The answer should usually be one.
+
+## 18. Remove Thin Wrappers That Add No Semantics
+
+Do not create wrapper functions that merely rename another function call without adding meaning, validation, transaction handling, or a useful abstraction boundary.
+
+Avoid:
+
+```python
+def get_invoice_lines(invoice):
+    return fetch_invoice_lines(invoice)
+```
+
+A wrapper is justified only when it introduces a meaningful domain phrase, stabilises an interface, adds validation, or hides implementation detail that callers should not know.
+
+The review question is:
+
+```text
+Does this wrapper make the code easier to understand, or does it only add another jump?
+```
+
+## 19. Helper Functions Are Not Automatically Good
+
+Do not break code into helper functions merely to make the top-level function shorter.
+
+A helper function is justified when it improves readability, names a real domain concept, is reused in multiple places, isolates complex logic, or creates a meaningful test boundary.
+
+A helper function is suspicious when it:
+
+```text
+Is used only once.
+Simply wraps one or two obvious lines.
+Has a vague name.
+Forces the reader to jump around the file.
+Hides important logic behind unnecessary indirection.
+Exists only because the agent reflexively decomposed the code.
+```
+
+Single-use helper functions are not forbidden, but they must earn their existence. The standard is readability, not arbitrary decomposition.
+
+Prefer direct, linear code when the operation is easier to understand in one place.
+
+## 20. Avoid Both Over-Abstraction and Giant Functions
+
+The desired code shape is neither a forest of tiny one-use helpers nor a 600-line god function.
+
+Inline code when:
+
+```text
+The logic is called once.
+The helper name does not clarify a real concept.
+The helper merely wraps a direct call.
+Inlining makes the operation easier to read.
+```
+
+Extract code when:
+
+```text
+The function has multiple responsibilities.
+The code has repeated domain logic.
+The nesting is becoming difficult to follow.
+The extracted concept has a strong name.
+The extracted unit is independently testable.
+```
+
+For backend services, prefer a clear main service function near the top of the file, with private helpers below in order of use.
+
+For React, prefer presentational subcomponents and hooks when a component is carrying data loading, mutation logic, form state, rendering, and conditional UI all at once.
+
+## 21. Naming Is a Code Review Issue
+
+Function, variable, class, and module names must describe the domain purpose of the code.
+
+Vague names such as `resolve`, `source`, `handle`, `process`, `data`, `payload`, `item`, `obj`, `config`, `preview`, or `result` should be treated as smells unless the surrounding context makes their meaning obvious.
+
+Avoid names like:
+
+```python
+resolve_status(...)
+process_data(...)
+handle_item(...)
+get_source(...)
+```
+
+Prefer names that expose the business meaning:
+
+```python
+determine_invoice_level(...)
+apply_credit_hold(...)
+build_service_price_lines(...)
+calculate_excess_weight_charge(...)
+validate_job_can_be_completed(...)
+invoice_bridge_ticket(...)
+cascade_void_jobs_for_failed_bin_delivery(...)
+```
+
+Name by resource and action where possible.
+
+A well-named function should reduce the amount of code the reader needs to inspect. A poorly named function makes the codebase feel larger than it is.
+
+The review question is:
+
+```text
+Would a maintainer understand what this function does from its name without opening the body?
+```
+
+If not, rename it.
+
+## 22. Put Code in the Owning Module
+
+Code should live in the module that owns the domain concept.
+
+Do not put bridge permissions in invoices, payment concepts in customers, pricing rules in views, or invoice-generation logic in projection code unless that is genuinely where the domain responsibility belongs.
+
+The review question is:
+
+```text
+Which app owns this concept?
+```
+
+If the answer is not the current module, move the code.
+
+## 23. Preview and Generation Must Use the Same Rules
+
+If the system has a preview path and a generation/persistence path, they must agree on:
+
+```text
+Inputs.
+Date fields.
+Validation rules.
+Eligibility rules.
+Permission checks.
+Grouping logic.
+Deduplication logic.
+Model invariants.
+```
+
+A preview that succeeds while generation fails is a serious pipeline bug.
+
+Intermediate projection objects must either satisfy the same invariants as the persisted models or be validated before preview results are shown.
+
+The review question is:
+
+```text
+Could preview pass while generation fails?
+```
+
+If yes, fix the seam.
+
+## 24. Billing, Invoicing, and Batch Pipelines Need Deduplication Checks
+
+For batch operations, ask:
+
+```text
+Can two bundlers, grouping stages, or pipeline branches emit the same charge?
+Can sibling jobs produce duplicate rental or service charges?
+Can a later stage silently drop lines?
+Can partial selection violate a ticket-level or invoice-level invariant?
+```
+
+If duplicate emission is possible, deduplicate at the seam using an explicit key and add a regression test.
+
+Domain operations that should be atomic, such as invoicing a whole bridge ticket, must not allow partial selection unless the partial behaviour is explicitly designed and tested.
+
+## 25. Date and Time Semantics Must Be Explicit
+
+Dates and datetimes must be handled deliberately.
+
+Use branch-local dates for business dates where branch locality matters. Use UTC for stored datetimes unless the project has a more specific convention.
+
+Billing logic must be explicit about which date drives:
+
+```text
+Rate selection.
+Invoice period eligibility.
+Surcharge selection.
+Display on PDFs.
+Reconciliation.
+Generation.
+Preview.
+```
+
+Do not casually mix `invoice_date`, `charge_date`, `ticket_date`, `completed_at`, `period_start`, and `period_end`.
+
+The review question is:
+
+```text
+Would preview, generation, PDF display, and reconciliation all agree on this date?
+```
+
+If not, make the date semantics explicit.
+
+## 26. Multi-Write Operations Must Be Atomic
+
+Any service operation that performs multiple writes must use `transaction.atomic` or an explicit atomic transaction boundary.
+
+This includes:
+
+```text
+Creating records plus child records.
+Updating status plus creating ledger entries.
+Sending/queueing emails plus updating invoice state.
+Deleting or archiving related records.
+Posting payments.
+Generating invoices.
+Voiding invoices or tickets.
+Batch operations.
+```
+
+Avoid two-write operations where the first write can succeed and the second can fail, leaving partial state.
+
+The review question is:
+
+```text
+What happens if this crashes halfway through?
+```
+
+If the answer is “partial state remains,” add a transaction or redesign the workflow.
+
+## 27. Async and Operational Flows Need Recoverable States
+
+Async/task flows must not leave records stranded in dead-end statuses.
+
+Do not mark a batch as successful if some sub-step failed. Do not swallow errors and report success. Do not create terminal states that require manual database surgery to recover.
+
+For task workflows, define:
+
+```text
+Queued state.
+In-progress state.
+Succeeded state.
+Failed state.
+Retryable failure behaviour.
+Operator-visible error state.
+```
+
+The review question is:
+
+```text
+If this external service fails, can the operator see and recover from the failure?
+```
+
+## 28. Never Silently Swallow Errors
+
+Do not catch broad exceptions and continue as though the operation succeeded.
+
+Avoid:
+
+```python
+try:
+    send_email(...)
+except Exception:
+    pass
+
+return SuccessResponse(...)
+```
+
+Prefer surfacing the failure, marking the operation as failed, or returning a partial failure result that the UI can display.
+
+The review question is:
+
+```text
+Could the system tell the user this worked when it did not?
+```
+
+If yes, fix it.
+
+## 29. Frontend Forms Must Follow Repository Form Standards
+
+Modal and CRUD forms should use the repository’s established form stack and error-handling conventions.
+
+Expected pattern:
+
+```text
+react-hook-form.
+Zod schema.
+zodResolver.
+parseApiError for mutation failures.
+field errors mapped with form.setError.
+unmapped errors shown in an alert/banner.
+consistent destructive error label, border, and message styling.
+```
+
+Validation errors must actually display useful messages to the user.
+
+Do not rely on network-tab errors, console logs, or silent disabled states as the only feedback.
+
+## 30. Frontend Components Should Use Shared UI Conventions
+
+Frontend components should use the established design system and import conventions.
+
+Expected pattern:
+
+```text
+Use shadcn/ui components where the repo already uses them.
+Use absolute `@/` imports where that is the established convention.
+Use semantic CSS variables rather than raw Tailwind palette colours.
+Use constant maps instead of long ternary chains for status/display mapping.
+Use consistent badge, icon, modal, and error styles.
+```
+
+Avoid raw palette classes such as:
+
+```tsx
+bg - amber - 100;
+text - red - 700;
+border - gray - 300;
+```
+
+unless nearby code clearly establishes that as acceptable.
+
+For button icons, apply icon sizing according to the repo’s button convention, for example via button-level selectors rather than one-off icon hacks where applicable.
+
+## 31. Disable Impossible Frontend Actions Early
+
+The frontend should prevent users from attempting actions that are obviously impossible from current state, such as adding a service line before selecting a site.
+
+However, frontend disabling is not a substitute for backend validation.
+
+The correct model is:
+
+```text
+Frontend prevents obvious invalid interactions.
+Backend enforces the true rule.
+Service layer remains authoritative.
+```
+
+## 32. Use Existing Repository Factories and Test Helpers
+
+Tests should use existing factories, fixtures, and permission helpers.
+
+Do not hand-roll users, branches, permissions, model graphs, or setup data if the repository already has helpers.
+
+Prefer:
+
+```python
+user = user_with_permission(...)
+```
+
+over custom ad hoc user creation, if that is the established repo pattern.
+
+The review question is:
+
+```text
+Am I using the same test helpers as nearby tests?
+```
+
+## 33. API Changes Need Happy and Sad Path Tests
+
+API changes should normally include:
+
+```text
+Happy path test.
+Permission denied test.
+Branch access denied test, where branch ownership matters.
+Validation failure test.
+Relevant state-transition failure test.
+```
+
+For billing, invoicing, payments, bridge tickets, job completion, and batch operations, add regression tests for edge cases that would cause financial or operational errors.
+
+When a bug or review comment identifies a mechanism failure, add the test that would have caught it.
+
+## 34. Frontend Changes Need Meaningful Coverage Where Practical
+
+For frontend work, test or manually verify the actual behaviours reviewers care about:
+
+```text
+Validation errors are visible.
+Permission loading does not redirect authorized users.
+Denied users cannot act.
+Mutation errors display correctly.
+Disabled states match backend affordances.
+Status/enum labels come from the API contract where applicable.
+```
+
+Do not ship frontend behaviour that only works in the happy path.
+
+## 35. Migrations Must Be Clean
+
+On active development branches, prefer clean migration history over stacked fix-up migrations when safe.
+
+Expected migration hygiene:
+
+```text
+No duplicate leaf migrations.
+No stale migrations from abandoned approaches.
+No unnecessary RunPython backfills on develop when delete-and-recreate is safe.
+No destructive one-step migration on live data paths.
+Merge leaf-node migrations before shipping.
+Follow expand → migrate → contract for live paths.
+```
+
+If the schema approach changes mid-branch, remove stale migrations rather than preserving every intermediate attempt.
+
+## 36. Do Not Ship Cruft
+
+Do not expand the diff with noise.
+
+Remove:
+
+```text
+Unused files.
+Unused imports.
+Commented-out code.
+Temporary debug code.
+Console logs.
+Implementation notes.
+Spec markdown.
+Dead helpers.
+Stale migrations.
+One-off scripts.
+```
+
+Do not include design documents, steering docs, or implementation plans in feature MRs unless explicitly requested.
+
+The review question is:
+
+```text
+Would a reviewer have to ask me to delete this?
+```
+
+If yes, delete it first.
+
+## 37. Code Must Be Easy to Review
+
+Generated code should minimise unnecessary diff noise.
+
+Avoid unrelated formatting changes, unnecessary reordering, broad rewrites, or opportunistic refactors unless the task explicitly calls for them.
+
+Prefer the smallest coherent change that solves the actual problem while preserving code quality.
+
+Before finishing, check:
+
+```text
+Did I change files unrelated to the task?
+Did I rewrite code that did not need to be rewritten?
+Did I introduce a new abstraction where a local change would have been clearer?
+Would this diff be annoying to review?
+```
+
+## 38. Respect Existing Architecture Before Inventing New Patterns
+
+Before introducing a new pattern, abstraction, folder, naming convention, hook, service style, serializer shape, or layer boundary, inspect nearby code and follow the existing repository style unless there is a strong reason not to.
+
+Do not introduce a new architecture to solve a small local problem.
+
+Do not create one-off abstractions that are inconsistent with the rest of the module.
+
+Do not move logic across layers merely because another architecture style would do so in a greenfield project.
+
+The review question is:
+
+```text
+Does this change look native to this repository?
+```
+
+## 39. Required Agent Self-Review
+
+Before presenting code as complete, the agent must explicitly self-review against this standard.
+
+The agent should not stop after making the implementation compile or pass obvious tests.
+
+If the agent intentionally violates one of these standards, it must explicitly explain why the exception is justified.
+
+Acceptable explanation:
+
+```text
+I used a local import here because importing this optional dependency at module load time triggers an external service initialisation. There is no circular dependency involved.
+```
+
+Unacceptable explanation:
+
+```text
+I used a local import to avoid an import error.
+```
+
+That usually means the structure is wrong and should be reconsidered.
+
+## Pre-Submit Checklist
+
+Before opening an MR or handing work back, verify:
+
+```text
+Imports
+- Are all imports at the top of the file?
+- Are there any local imports?
+- If there are local imports, are they genuinely justified?
+- Is any circular dependency being hidden rather than fixed?
+
+Layering
+- Are API views thin?
+- Does each API view represent one clear operation?
+- Is business logic in services?
+- Are serializers limited to API contract validation and representation?
+- Are services responsible for writes, authorization, and workflows?
+
+Validation and invariants
+- Is API shape validation in serializers?
+- Is business validation in services?
+- Are impossible states prevented by model/database constraints where possible?
+- Is clean() thin?
+- Are defensive downstream sanity checks removed?
+
+Choices and contracts
+- Are model TextChoices used instead of hard-coded strings?
+- Do serializers use model-defined choices?
+- Do services use TextChoices constants or .values where applicable?
+- Are configurable choices represented with the correct model relationships?
+- Are structured API responses represented with explicit nested serializers?
+- Has OpenAPI/schema drift been checked after API changes?
+
+Permissions
+- Are branch-access checks performed in services?
+- Are permissions checked before writes and expensive queries where possible?
+- Does the backend derive permission-aware UI affordances?
+- Does the frontend distinguish loading from denied?
+
+Naming and module ownership
+- Are function names specific and domain-oriented?
+- Are vague names like resolve, process, handle, source, config, or data avoided?
+- Does the code live in the owning module?
+- If naming is hard, has the function been split or clarified?
+
+Duplication and abstraction
+- Is there one owner for each domain concept?
+- Has the agent searched for existing canonical resolvers/helpers?
+- Are thin wrappers removed?
+- Are single-use helpers justified?
+- Has the agent avoided both over-abstraction and giant functions?
+
+Pipelines
+- Do preview and generation use the same inputs, dates, validation, and eligibility rules?
+- Can preview pass while generation fails?
+- Are batch operations protected against duplicate charge emission?
+- Are atomic domain operations kept atomic?
+
+Transactions and failures
+- Are multi-write operations wrapped in transaction.atomic?
+- Do async flows have recoverable states?
+- Are errors surfaced instead of swallowed?
+- Could the system report success when a sub-step failed?
+
+Frontend
+- Do forms use Zod, zodResolver, parseApiError, form.setError, and visible error messages?
+- Are shadcn/ui and repo UI conventions followed?
+- Are semantic colours used instead of raw palette classes?
+- Are backend-owned enums not hard-coded in the frontend?
+- Are impossible actions disabled early while still enforced by the backend?
+
+Tests
+- Are API happy paths covered?
+- Are permission, branch-access, and validation sad paths covered?
+- Are existing factories and permission helpers used?
+- Has a regression test been added for any bug-prone mechanism?
+
+Migrations and diff hygiene
+- Are migrations clean?
+- Are duplicate leaf migrations resolved?
+- Are stale migrations removed?
+- Is there any unused code, commented-out code, debug code, docs, or dead files?
+- Is the diff focused and reviewable?
+
+Dates and timezones
+- Are branch-local dates and UTC datetimes handled deliberately?
+- Is the date driving billing, display, rate selection, preview, and generation explicit?
+```
+
+## Definition of Done
+
+A change is not complete until:
+
+```text
+The implementation solves the requested problem.
+The code follows existing repository patterns.
+The diff is focused and reviewable.
+Imports are clean.
+API views are thin.
+Business logic is in services.
+Serializers describe contracts rather than workflows.
+Choices and constants are not duplicated.
+Invalid states are prevented at the strongest sensible layer.
+Branch access and permissions are enforced in services.
+Frontend affordances are permission-aware.
+Preview and generation paths agree.
+Multi-write operations are atomic.
+Errors are not silently swallowed.
+Helper functions are justified.
+Names are readable and domain-specific.
+Tests cover happy and sad paths.
+Migrations are clean.
+Cruft has been removed.
+The agent has reviewed the change against this document.
+```
+
+Code that works but fails these standards should be treated as unfinished.
+
+## Suggested Agent Prompt Block
+
+Use this block in task instructions, `AGENTS.md`, or a repo skill:
+
+```text
+Before submitting code, self-review against CODE_REVIEW_STANDARD.md.
+
+In particular:
+
+1. API views must be thin. Business logic, writes, permissions, branch access, and workflows belong in services.
+2. Serializers validate API shape and represent API contracts. They should not become business-logic containers.
+3. Avoid defensive programming. Validate once at the agreed boundary, enforce invariants at the model/database layer where possible, and fail loudly when contracts are violated.
+4. Use model TextChoices, enum classes, .values, constants, and configurable-choice models correctly. Do not hard-code backend-owned values.
+5. Do not hard-code backend-owned enums or option lists in the frontend.
+6. Use explicit nested serializers for structured API data. Do not return loose dict shapes unless the structure is genuinely arbitrary.
+7. Check branch access and permissions in services before writes and before expensive queries where possible.
+8. Backend should derive permission-aware UI affordances such as can_void, can_edit, can_take_payment, and can_invoice.
+9. Names must be resource/action-oriented and domain-specific. Avoid vague helpers such as resolve, process, handle, source, config, and data.
+10. Put code in the module that owns the domain concept.
+11. Avoid duplicated domain mappings. Search for the existing canonical resolver before writing another one.
+12. Delete thin wrappers, unused files, commented-out code, stale migrations, debug code, and implementation notes.
+13. Preview and generation paths must use the same dates, validation, eligibility rules, and invariants.
+14. Batch billing/invoicing paths must be protected against duplicate emission and silent line dropping.
+15. Multi-write operations require transaction.atomic or an explicit transaction boundary.
+16. Async flows need recoverable failed states and must not report success when sub-steps fail.
+17. Frontend forms should use the repo form stack: Zod, zodResolver, parseApiError, field errors via form.setError, and visible error messages.
+18. Frontend UI should follow repo conventions: shadcn/ui, @/ imports, semantic colours, constant maps instead of ternary chains.
+19. API changes need happy-path and sad-path tests, including permission denied, branch access denied, and validation failure where applicable.
+20. Migrations must be clean: no duplicate leaves, stale migrations, unnecessary fix-up migrations, or unsafe destructive live-data changes.
+
+If you cannot point to where each relevant rule is satisfied, fix the code before requesting review.
+```
+
+================================================================================
+END OF BUNDLE — 3790 lines total
+================================================================================

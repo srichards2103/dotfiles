@@ -1,0 +1,498 @@
+model_reasoning_effort = "xhigh"
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+
+model = "gpt-5.5"
+personality = "pragmatic"
+
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"
+persistent_instructions = "Follow project AGENTS.md guidelines. Use available MCP servers when they can help. In WasteOS repos (paths containing wasteos), self-review generated code against ~/.config/wasteos/code-review-standard.md before presenting work complete. When UI screenshots belong on an MR, follow wasteos-mr-upload-photos and run ~/.config/wasteos/shipfeat/scripts/upload_mr_screenshots.sh — do not finish without posting images to the MR."
+
+notify = ["/Users/samrichards/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended", "--previous-notify", "[\"terminal-notifier\",\"-title\",\"Codex ECC\",\"-message\",\"Task completed!\",\"-sound\",\"default\"]"]
+service_tier = "default"
+
+[projects."/Users/samrichards/code"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-agent-stepup"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/Library/Application Support/Open Design/namespaces/release-stable/data/projects/14e3a0e0-b2bd-4574-a98d-cefd4ecb2f91"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/Library/Application Support/Open Design/namespaces/release-stable/data/projects/c40eeb05-d4db-4a40-9e8f-1454d4fbef56"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/Library/Application Support/Open Design/namespaces/release-stable/data/projects/e95e3e2d-e244-4295-b0f5-b4bf292aaae8"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/serial"]
+trust_level = "trusted"
+
+[notice]
+hide_gpt5_1_migration_prompt = true
+"hide_gpt-5.1-codex-max_migration_prompt" = true
+hide_rate_limit_model_nudge = true
+[features]
+multi_agent = true
+child_agents_md = true
+memories = true
+js_repl = false
+
+[agents]
+max_threads = 6
+max_depth = 2
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[profiles.strict]
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+web_search = "cached"
+
+[profiles.yolo]
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+[agents.explorer]
+description = "Read-only codebase explorer for gathering evidence before changes are proposed."
+config_file = "agents/explorer.toml"
+
+[agents.reviewer]
+description = "PR reviewer focused on correctness, security, and missing tests."
+config_file = "agents/reviewer.toml"
+
+[agents.docs_researcher]
+description = "Documentation specialist that verifies APIs, framework behavior, and release notes."
+config_file = "agents/docs-researcher.toml"
+
+[mcp_servers.supabase]
+command = "bunx"
+args = ["@supabase/mcp-server-supabase@latest", "--features=account,docs,database,debugging,development,functions,storage,branching"]
+startup_timeout_sec = 20.0
+tool_timeout_sec = 120.0
+enabled = false
+
+[mcp_servers.playwright]
+command = "bunx"
+args = ["@playwright/mcp@latest"]
+startup_timeout_sec = 30
+enabled = false
+
+[mcp_servers.context7]
+command = "bunx"
+args = ["@upstash/context7-mcp@latest"]
+startup_timeout_sec = 30
+enabled = true
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
+enabled = false
+
+[mcp_servers.github]
+command = "bash"
+args = ["-lc", "token=$(gh auth token 2>/dev/null || true); if [ -n \"$token\" ]; then export GITHUB_PERSONAL_ACCESS_TOKEN=\"$token\"; fi; exec bunx @modelcontextprotocol/server-github"]
+startup_timeout_sec = 30
+enabled = false
+
+[mcp_servers.memory]
+command = "bunx"
+args = ["@modelcontextprotocol/server-memory"]
+startup_timeout_sec = 30
+enabled = false
+
+[mcp_servers.sequential-thinking]
+command = "bunx"
+args = ["@modelcontextprotocol/server-sequential-thinking"]
+startup_timeout_sec = 30
+
+[desktop]
+appearanceTheme = "dark"
+preventSleepWhileRunning = true
+composerEnterBehavior = "enter"
+usePointerCursors = false
+reduced-motion-preference = "system"
+useFontSmoothing = true
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-05T07:35:04Z"
+source_type = "local"
+source = "/Users/samrichards/.codex/.tmp/bundled-marketplaces/openai-bundled"
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-06-01T23:16:32Z"
+source_type = "local"
+source = "/Users/samrichards/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[memories]
+generate_memories = true
+use_memories = true
+
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+
+[mcp_servers.codegraph.tools.codegraph_explore]
+approval_mode = "approve"
+
+[mcp_servers.codegraph.tools.codegraph_node]
+approval_mode = "approve"
+
+[mcp_servers.node_repl]
+args = []
+command = "/Applications/Codex.app/Contents/Resources/node_repl"
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = ""
+NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/node"
+NODE_REPL_TRUSTED_CODE_PATHS = "/Users/samrichards/.codex"
+CODEX_HOME = "/Users/samrichards/.codex"
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "a0dc4b6aaefe6a6a82d9a34fb524e77df6e0bf71387f0d4760157a46f52e6a93"
+BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab"
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative."
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+BROWSER_USE_CODEX_APP_VERSION = "26.602.30954"
+CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
+
+[projects."/Users/samrichards/code/wasteos-bug-538-docker-system-prune-when-containers-runnin"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-580-grafana-not-wired-into-do-deployment"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-fix-deploy-to-do-bug"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-fix-eas-build-pipelines"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-fix-eas-pipelines"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-incredibly-slow-allocate-and-dispatch"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-invoice-preview-speedup"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-npm-not-found-on-runners"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-payment-batch-invoices"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-payway-tokens-in-digital-ocean-deployment"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-remove-2fa-in-django-admin-login"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-trigger-eas-builds"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-deepsec"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-deployment-options-conversation"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-experiment-agent-driven-importing-engine"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-experiment-campaign-monitor-api-discovery"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-experiment-fix-data-pipeline"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-experiment-speed-up-import"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-experiment-ultra-cook-pipeline"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-485-take-payment-cash-sale-flow"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-510-invoicing-pipeline-page"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-513-crud-charges"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-520-invoice-search-table"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-521-billing-config-on-account"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-522-edit-job-modal-integrated-into-new-job"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-525-invoice-preview-refactor"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-526-create-jobs-from-route-button"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-527-invoice-payment-links-and-pagination"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-528-roadmap-tickets"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-529-void-invoices"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-530-contract-services-scoping"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-531-base-charges-link-to-primitives"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-532-price-list-date-ranges"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-535-create-debit-notes-crud"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-535-credit-debit-notes-crud"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-536-service-class-service-types-enums"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-537-view-payment-transaction-receipts-in-u"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-539-empty-line-frontend-and-mobile-app-imp"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-540-ar-allocations-crud"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-543-mobile-app-flows"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-555-payment-receipting-write-off-and-delet"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-558-zero-downtime-deployments"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-559-job-confirmation-rental-editability"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-562-first-pass-analytics-dashboard"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-564-bulk-emailing-utility"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-565-recurring-charges-creation-task"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-566-hook-bridge-tickets-into-invoicing-pip"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-567-reconfirm-only-after-confirmation"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-569-eas-build-setup-for-internal-distribut"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-571-2FA"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-575-harden-do-restore-backup-script"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-577-outbound-removal-bridge-ticket"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-578-embedded-documentation"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-585-arrears-customers-require-abn-upon-cre"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-586-print-runsheet"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-592-bridge-pi-edge-device"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-594-import-bridge-tickets-kms"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-596-internal-company-bridge-tickets"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-599-create-vendor-tip-rates-for-tip-vendor"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-600-payments-settings"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-603-speed-up-invoicing-projection"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-605-speed-up-build-and-e2e-tests"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-606-fuel-surcharge"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-607-outbound-bridge-tickets-import"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-609-tighten-print-runsheet"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-612-material-unification-on-imports"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-619-job-reconfirmation"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-620-invoice-emailing"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-bridge-weights-capture-mechanism"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-crm-in-customers"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-email-correspondence-visibility"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-goal-mode-analytics-dashboard"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-initial-dashboard"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-job-confirmation-docket"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-live-routing-map-dispatch"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-price-list-refactor"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-price-list-scoping-vendor-general-grouping"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-redesign-job-modal-and-add-followup-job"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-simplify-bin-on-site-table"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fefature-608-remove-dollar-value-from-bridge-docke"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fix-add-changes-back-to-mobile-app-preview-build-j"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fix-asgi-bug"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fix-digital-ocean-ssh-access-for-web-console-and-t"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fix-do-deploy-not-working"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-fix-user-company-operational-classes"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-gitlab-ci-fuckery"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-import-595-update-operational-status-to-ready-if-c"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-investigation-gitlab-ci"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-job-confirmation-redesign"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-mobile-app"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-planning-skills"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-refactor-587-roles-and-permissions"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-refactor-587-roles-and-permissions-cleanup"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-refactor-601-charge-projection"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-security-584-address-vulnerabilities"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-slow-fucking-imports"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-spike-bridge-requirements-specification"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-spike-bridge-requirements-specification-feature-clean-up-price-list-services-layer"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-your-mum"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-624-bin-on-site-side-effects-after-job-com"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-analytics-dashboard-for-real"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-634-price-lists-ui-update-on-account-site"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-driver-app-reset-data"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-bug-638-create-job-modal-doesnt-guard-clicking-sub"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-invoice-speedup"]
+trust_level = "trusted"
+
+[projects."/Users/samrichards/code/wasteos-feature-640-uprating-working"]
+trust_level = "trusted"

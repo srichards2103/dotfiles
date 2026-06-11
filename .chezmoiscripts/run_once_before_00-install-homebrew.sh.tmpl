@@ -1,0 +1,12 @@
+{{ if eq .chezmoi.os "darwin" -}}
+#!/bin/bash
+set -euo pipefail
+
+if command -v brew >/dev/null 2>&1 || [ -x /opt/homebrew/bin/brew ]; then
+  echo "Homebrew already installed — skipping."
+  exit 0
+fi
+
+echo "Installing Homebrew (will prompt for your macOS password)..."
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+{{ end -}}

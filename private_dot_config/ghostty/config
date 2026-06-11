@@ -1,0 +1,5 @@
+# Mirrored from iTerm2 default profile
+# Font is a Nerd Font patched build, so Neovim file/language icons render in-band.
+font-family = MesloLGS Nerd Font Mono
+font-size = 12
+

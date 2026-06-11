@@ -1,0 +1,6 @@
+- [ ] Billing / pricing
+  - Read domain spec under `docs/specs/` if present
+  - Trace calculation path (services, not API views)
+  - Add regression tests for price/charge outcomes
+  - Run domain parity / baseline check if `requires_domain_parity_check`
+  - Acceptance: pricing tests green, no silent rounding regressions

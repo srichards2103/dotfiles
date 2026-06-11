@@ -1,0 +1,7 @@
+[user]
+	name = Sam Richards
+	email = samuel.richards@wanless.com.au
+[push]
+	autoSetupRemote = true
+[core]
+	hooksPath = /Users/samrichards/.codex/git-hooks

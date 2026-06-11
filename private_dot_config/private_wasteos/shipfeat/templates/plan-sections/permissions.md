@@ -1,0 +1,5 @@
+- [ ] Permissions
+  - Locate permission definitions and role assignments
+  - Add/adjust permission records via agreed migration path (no duplicate leaves)
+  - Add API tests with `user_with_permission` / denied user
+  - Acceptance: happy + sad path API tests for new permission gates

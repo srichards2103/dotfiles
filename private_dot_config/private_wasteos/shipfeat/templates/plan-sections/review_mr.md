@@ -1,0 +1,6 @@
+- [ ] Review and MR
+  - `shipfeat status` — session, MR, watcher, gates
+  - Self-review against `docs/steering/code-review-standard.md` (or `~/.config/wasteos/code-review-standard.md`)
+  - Push branch; `open_mr.sh` (session + MR IID recorded)
+  - MR comment loop: push before resolve; `consume_mr_comment_prompt.sh` when batch done
+  - `shipfeat done` before claiming complete to user
